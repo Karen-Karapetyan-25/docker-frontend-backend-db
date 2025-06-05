@@ -24,13 +24,13 @@ jobs:
         run: docker build -t myapp-backend:latest ./backend
 
       - name: Scan Frontend Image with Trivy
-        uses: aquasecurity/trivy-action@v0.13.1
+        uses: aquasecurity/trivy-action@master
         with:
           scan-type: image
           image-ref: myapp-frontend:latest
 
       - name: Scan Backend Image with Trivy
-        uses: aquasecurity/trivy-action@v0.13.1
+        uses: aquasecurity/trivy-action@master
         with:
           scan-type: image
           image-ref: myapp-backend:latest
