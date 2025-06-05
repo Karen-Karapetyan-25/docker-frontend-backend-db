@@ -1,0 +1,36 @@
+name: Build and Scan Docker Images
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+
+jobs:
+  build-and-scan:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Frontend Image
+        run: docker build -t myapp-frontend:latest ./frontend
+
+      - name: Build Backend Image
+        run: docker build -t myapp-backend:latest ./backend
+
+      - name: Scan Frontend Image with Trivy
+        uses: aquasecurity/trivy-action@v0.13.1
+        with:
+          scan-type: image
+          image-ref: myapp-frontend:latest
+
+      - name: Scan Backend Image with Trivy
+        uses: aquasecurity/trivy-action@v0.13.1
+        with:
+          scan-type: image
+          image-ref: myapp-backend:latest
