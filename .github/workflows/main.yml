@@ -10,8 +10,8 @@ env:
 
   # AWS account-specific bits come from secrets so they never leak in logs
   ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.eu-west-1.amazonaws.com
-  FRONTEND_REPO: ${{ secrets.ECR_REPO_FRONTEND }}   # e.g. frontend
-  BACKEND_REPO:  ${{ secrets.ECR_REPO_BACKEND }}    # e.g. backend
+  FRONTEND_REPO:  383313560305.dkr.ecr.eu-west-1.amazonaws.com/frontend  # e.g. frontend
+  BACKEND_REPO:  383313560305.dkr.ecr.eu-west-1.amazonaws.com/backend    # e.g. backend
 
 jobs:
   build:
