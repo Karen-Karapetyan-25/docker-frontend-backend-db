@@ -2,7 +2,7 @@ name: Build, Scan, and Push Docker Images to ECR
 
 on:
   push:
-    branches: [ main ]
+    branches: [ master ]
 
 jobs:
   build-scan-push:
