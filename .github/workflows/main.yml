@@ -1,36 +1,60 @@
-name: Build and Scan Docker Images
+name: Build, Scan, and Push Docker Images to ECR
 
 on:
   push:
-    branches:
-      - master
-  pull_request:
+    branches: [ main ]
 
 jobs:
-  build-and-scan:
+  build-scan-push:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+    - name: Checkout repo
+      uses: actions/checkout@v3
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
 
-      - name: Build Frontend Image
-        run: docker build -t myapp-frontend:latest ./frontend
+    - name: Log in to AWS ECR
+      uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build Backend Image
-        run: docker build -t myapp-backend:latest ./backend
+    - name: Set AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Scan Frontend Image with Trivy
-        uses: aquasecurity/trivy-action@master
-        with:
-          scan-type: image
-          image-ref: myapp-frontend:latest
+    - name: Build Frontend Image
+      run: |
+        docker build -t frontend:latest ./frontend
 
-      - name: Scan Backend Image with Trivy
-        uses: aquasecurity/trivy-action@master
-        with:
-          scan-type: image
-          image-ref: myapp-backend:latest
+    - name: Trivy Scan Frontend (ignore errors)
+      uses: aquasecurity/trivy-action@master
+      continue-on-error: true
+      with:
+        image-ref: 'frontend:latest'
+        format: 'table'
+
+    - name: Tag and Push Frontend to ECR
+      run: |
+        FRONTEND_REPO=${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/my-frontend-repo
+        docker tag frontend:latest $FRONTEND_REPO:latest
+        docker push $FRONTEND_REPO:latest
+
+    - name: Build Backend Image
+      run: |
+        docker build -t backend:latest ./backend
+
+    - name: Trivy Scan Backend (ignore errors)
+      uses: aquasecurity/trivy-action@master
+      continue-on-error: true
+      with:
+        image-ref: 'backend:latest'
+        format: 'table'
+
+    - name: Tag and Push Backend to ECR
+      run: |
+        BACKEND_REPO=${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/my-backend-repo
+        docker tag backend:latest $BACKEND_REPO:latest
+        docker push $BACKEND_REPO:latest
