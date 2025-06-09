@@ -32,7 +32,7 @@ jobs:
     - name: Build Frontend Docker Image
       run: |
         docker build -t frontend:latest ./frontend
-
+        
     - name: Scan Frontend Image with Trivy (Ignore Errors)
       uses: aquasecurity/trivy-action@master
       continue-on-error: true
