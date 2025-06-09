@@ -7,7 +7,7 @@ on:
 
 env:
   AWS_REGION: ${{ secrets.AWS_REGION }}                 # e.g. us-east-1
-  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+  ECR_REGISTRY: https://eu-west-1.console.aws.amazon.com/ecr/home?region=eu-west-1.amazonaws.com
   FRONTEND_REPO: ${{ secrets.ECR_REPO_FRONTEND }}       # e.g. my-frontend
   BACKEND_REPO:  ${{ secrets.ECR_REPO_BACKEND }}        # e.g. my-backend
 
