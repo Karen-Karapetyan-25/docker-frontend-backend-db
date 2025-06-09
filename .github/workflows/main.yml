@@ -15,9 +15,6 @@ jobs:
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
 
-    - name: Log in to AWS ECR
-      uses: aws-actions/amazon-ecr-login@v2
-
     - name: Set AWS credentials
       uses: aws-actions/configure-aws-credentials@v2
       with:
@@ -25,11 +22,18 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ secrets.AWS_REGION }}
 
-    - name: Build Frontend Image
+    - name: Log in to AWS ECR
+      uses: aws-actions/amazon-ecr-login@v2
+      with:
+        region: ${{ secrets.AWS_REGION }}
+
+    # FRONTEND
+
+    - name: Build Frontend Docker Image
       run: |
         docker build -t frontend:latest ./frontend
 
-    - name: Trivy Scan Frontend (ignore errors)
+    - name: Scan Frontend Image with Trivy (Ignore Errors)
       uses: aquasecurity/trivy-action@master
       continue-on-error: true
       with:
@@ -42,11 +46,13 @@ jobs:
         docker tag frontend:latest $FRONTEND_REPO:latest
         docker push $FRONTEND_REPO:latest
 
-    - name: Build Backend Image
+    # BACKEND
+
+    - name: Build Backend Docker Image
       run: |
         docker build -t backend:latest ./backend
 
-    - name: Trivy Scan Backend (ignore errors)
+    - name: Scan Backend Image with Trivy (Ignore Errors)
       uses: aquasecurity/trivy-action@master
       continue-on-error: true
       with:
