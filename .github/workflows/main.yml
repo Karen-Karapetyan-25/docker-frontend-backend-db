@@ -1,26 +1,27 @@
-name: build-scan-push-and-provision
+name: build-scan-push-provision
+
 on:
   push:
     branches: [ master ]
   workflow_dispatch:
 
 env:
-  # keep the original hard-coded ECR region
-  AWS_REGION: eu-west-1            # for Docker images
-  TF_AWS_REGION: eu-central-1      # for Terraform / EC2
+  # ─── Regions ────────────────────────────────────────────
+  AWS_REGION: eu-west-1        # ECR (images)
+  TF_AWS_REGION: eu-central-1  # Terraform / EC2
 
 jobs:
   build_and_provision:
     runs-on: ubuntu-latest
     permissions:
-      id-token: write    # OIDC for AWS auth
+      id-token: write
       contents: read
 
     steps:
-    # ---------- Checkout repo ----------
+    # ───── Checkout ───────────────────────────────────────
     - uses: actions/checkout@v4
 
-    # ---------- AWS auth (OIDC or static keys in repo secrets) ----------
+    # ───── AWS creds & ECR login ──────────────────────────
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v4
       with:
@@ -28,10 +29,9 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region:            ${{ env.AWS_REGION }}
 
-    # ---------- ECR login ----------
     - uses: aws-actions/amazon-ecr-login@v2
 
-    # ---------- Build & tag images ----------
+    # ───── Build + tag Docker images ──────────────────────
     - name: Set image tags
       id: vars
       run: |
@@ -39,36 +39,33 @@ jobs:
         echo "FRONT=383313560305.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/frontend:${SHA}" >> "$GITHUB_OUTPUT"
         echo "BACK=383313560305.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/backend:${SHA}"  >> "$GITHUB_OUTPUT"
 
-    - name: Build frontend image
+    - name: Build frontend
       run: docker build -t ${{ steps.vars.outputs.FRONT }} ./frontend
 
-    - name: Build backend image
+    - name: Build backend
       run: docker build -t ${{ steps.vars.outputs.BACK }} ./backend
 
-    # ---------- Trivy scans (non-blocking) ----------
-    - name: Scan frontend image with Trivy
-      uses: aquasecurity/trivy-action@0.19.0
+    # ───── Trivy scans (non-blocking) ─────────────────────
+    - uses: aquasecurity/trivy-action@0.19.0
       with:
         image-ref:      ${{ steps.vars.outputs.FRONT }}
         exit-code:      0
         ignore-unfixed: true
 
-    - name: Scan backend image with Trivy
-      uses: aquasecurity/trivy-action@0.19.0
+    - uses: aquasecurity/trivy-action@0.19.0
       with:
         image-ref:      ${{ steps.vars.outputs.BACK }}
         exit-code:      0
         ignore-unfixed: true
 
-    # ---------- Push to ECR ----------
-    - name: Push images to ECR
+    # ───── Push to ECR ────────────────────────────────────
+    - name: Push images
       run: |
         docker push ${{ steps.vars.outputs.FRONT }}
         docker push ${{ steps.vars.outputs.BACK }}
 
-    # ---------- Terraform: provision EC2 ----------
-    - name: Setup Terraform
-      uses: hashicorp/setup-terraform@v2
+    # ───── Terraform: create EC2 ──────────────────────────
+    - uses: hashicorp/setup-terraform@v2
       with:
         terraform_version: 1.8.5
 
@@ -77,12 +74,34 @@ jobs:
       env:
         AWS_REGION: ${{ env.TF_AWS_REGION }}
 
-    - name: Terraform plan
-      run: terraform plan
+    - name: Terraform apply
+      run: terraform apply -auto-approve
       env:
         AWS_REGION: ${{ env.TF_AWS_REGION }}
 
-    - name: Terraform apply
-      run: terraform apply --auto-approve
-      env:
-        AWS_REGION: ${{ env.TF_AWS_REGION }}
+    # ───── Grab EC2 public IP ─────────────────────────────
+    - id: ec2ip
+      name: Get EC2 public IP
+      run: |
+        IP=$(aws ec2 describe-instances \
+              --filters "Name=tag:Name,Values=app-host" "Name=instance-state-name,Values=running" \
+              --region ${{ env.TF_AWS_REGION }} \
+              --query "Reservations[0].Instances[0].PublicIpAddress" --output text)
+        echo "IP=$IP" >> "$GITHUB_OUTPUT"
+
+    # ───── Prepare SSH key for Ansible ────────────────────
+    - name: Write SSH private key
+      run: |
+        echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ec2_key
+        chmod 600 ~/.ec2_key
+
+    # ───── Install Ansible ────────────────────────────────
+    - name: Install Ansible
+      run: |
+        sudo apt-get update -y
+        sudo apt-get install -y ansible
+
+    # ───── Run Ansible playbook to install Docker/Compose ─
+    - name: Install Docker with Ansible
+      run: |
+        ansible-playbook -i "${{ steps.ec2ip.outputs.IP }}," -u ec2-user --private-key ~/.ec2_key install_docker.yml
