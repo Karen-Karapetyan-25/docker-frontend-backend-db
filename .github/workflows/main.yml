@@ -1,66 +1,83 @@
-name: build-scan-push
+name: build-scan-push-and-provision
 on:
   push:
     branches: [ master ]
   workflow_dispatch:
 
 env:
-  # Hard-coded for eu-west-1
-  AWS_REGION: eu-west-1
+  # keep the original hard-coded ECR region
+  AWS_REGION: eu-west-1            # for Docker images
+  TF_AWS_REGION: eu-central-1      # for Terraform / EC2
 
 jobs:
-  build:
+  build_and_provision:
     runs-on: ubuntu-latest
     permissions:
-      id-token: write
+      id-token: write    # OIDC for AWS auth
       contents: read
 
     steps:
-      # ---------- Checkout ----------
-      - uses: actions/checkout@v4
+    # ---------- Checkout repo ----------
+    - uses: actions/checkout@v4
 
-      # ---------- AWS auth & ECR login ----------
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region:            ${{ env.AWS_REGION }}
+    # ---------- AWS auth (OIDC or static keys in repo secrets) ----------
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region:            ${{ env.AWS_REGION }}
 
-      - name: Login to Amazon ECR
-        uses: aws-actions/amazon-ecr-login@v2
+    # ---------- ECR login ----------
+    - uses: aws-actions/amazon-ecr-login@v2
 
-      # ---------- Build images ----------
-      - name: Set image tags
-        id: vars
-        run: |
-          SHA="${GITHUB_SHA::7}"
-          echo "FRONT=383313560305.dkr.ecr.eu-west-1.amazonaws.com/frontend:${SHA}" >> "$GITHUB_OUTPUT"
-          echo "BACK=383313560305.dkr.ecr.eu-west-1.amazonaws.com/backend:${SHA}"  >> "$GITHUB_OUTPUT"
+    # ---------- Build & tag images ----------
+    - name: Set image tags
+      id: vars
+      run: |
+        SHA="${GITHUB_SHA::7}"
+        echo "FRONT=383313560305.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/frontend:${SHA}" >> "$GITHUB_OUTPUT"
+        echo "BACK=383313560305.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/backend:${SHA}"  >> "$GITHUB_OUTPUT"
 
-      - name: Build frontend image
-        run: docker build -t ${{ steps.vars.outputs.FRONT }} ./frontend
+    - name: Build frontend image
+      run: docker build -t ${{ steps.vars.outputs.FRONT }} ./frontend
 
-      - name: Build backend image
-        run: docker build -t ${{ steps.vars.outputs.BACK }} ./backend
+    - name: Build backend image
+      run: docker build -t ${{ steps.vars.outputs.BACK }} ./backend
 
-      # ---------- Trivy scans (non-blocking) ----------
-      - name: Scan frontend image with Trivy
-        uses: aquasecurity/trivy-action@0.19.0
-        with:
-          image-ref:       ${{ steps.vars.outputs.FRONT }}
-          exit-code:       0
-          ignore-unfixed:  true
+    # ---------- Trivy scans (non-blocking) ----------
+    - name: Scan frontend image with Trivy
+      uses: aquasecurity/trivy-action@0.19.0
+      with:
+        image-ref:      ${{ steps.vars.outputs.FRONT }}
+        exit-code:      0
+        ignore-unfixed: true
 
-      - name: Scan backend image with Trivy
-        uses: aquasecurity/trivy-action@0.19.0
-        with:
-          image-ref:       ${{ steps.vars.outputs.BACK }}
-          exit-code:       0
-          ignore-unfixed:  true
-          
-      # ---------- Push to ECR ----------
-      - name: Push images to ECR
-        run: |
-          docker push ${{ steps.vars.outputs.FRONT }}
-          docker push ${{ steps.vars.outputs.BACK }}
+    - name: Scan backend image with Trivy
+      uses: aquasecurity/trivy-action@0.19.0
+      with:
+        image-ref:      ${{ steps.vars.outputs.BACK }}
+        exit-code:      0
+        ignore-unfixed: true
+
+    # ---------- Push to ECR ----------
+    - name: Push images to ECR
+      run: |
+        docker push ${{ steps.vars.outputs.FRONT }}
+        docker push ${{ steps.vars.outputs.BACK }}
+
+    # ---------- Terraform: provision EC2 ----------
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v2
+      with:
+        terraform_version: 1.8.5
+
+    - name: Terraform init
+      run: terraform init
+      env:
+        AWS_REGION: ${{ env.TF_AWS_REGION }}
+
+    - name: Terraform apply
+      run: terraform apply -auto-approve
+      env:
+        AWS_REGION: ${{ env.TF_AWS_REGION }}
