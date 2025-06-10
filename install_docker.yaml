@@ -1,0 +1,31 @@
+---
+- name: Install Docker and Docker Compose
+  hosts: all
+  become: yes
+  tasks:
+    - name: Install required packages
+      package:
+        name:
+          - dnf-plugins-core
+          - docker
+          - docker-compose-plugin
+        state: present
+
+    - name: Enable and start Docker service
+      systemd:
+        name: docker
+        enabled: yes
+        state: started
+
+    - name: Add ec2-user to docker group
+      user:
+        name: ec2-user
+        groups: docker
+        append: yes
+
+    - name: Symlink docker-compose (classic command)
+      file:
+        src: /usr/libexec/docker/cli-plugins/docker-compose
+        dest: /usr/local/bin/docker-compose
+        state: link
+        force: yes
