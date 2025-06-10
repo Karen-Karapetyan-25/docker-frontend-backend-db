@@ -77,7 +77,12 @@ jobs:
       env:
         AWS_REGION: ${{ env.TF_AWS_REGION }}
 
+    - name: Terraform plan
+      run: terraform plan
+      env:
+        AWS_REGION: ${{ env.TF_AWS_REGION }}
+
     - name: Terraform apply
-      run: terraform apply -auto-approve
+      run: terraform apply --auto-approve
       env:
         AWS_REGION: ${{ env.TF_AWS_REGION }}
