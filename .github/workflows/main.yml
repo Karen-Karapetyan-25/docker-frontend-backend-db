@@ -140,16 +140,25 @@ jobs:
         echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/ec2_key
         chmod 600 ~/.ssh/ec2_key
 
-    # ─── Install Ansible & its deps ───────────────────────────────────
+       # (…everything up to SSH key write stays the same …)
+
+    # ─── Write dynamic inventory file ──────────────────────────────────
+    - name: Create Ansible inventory
+      run: |
+        mkdir -p ansible            # workspace already in repo root
+        sed "s|<IP>|${{ steps.ec2ip.outputs.ip }}|" \
+            ansible/inventory_template.ini \
+            > ansible/inventory.ini
+
+    # ─── Install Ansible ───────────────────────────────────────────────
     - name: Install Ansible
       run: |
         sudo apt-get update -y
         sudo apt-get install -y ansible
 
-    # ─── Run playbook to install Docker & Compose on EC2 ──────────────
+    # ─── Run playbook: Docker + Compose ────────────────────────────────
     - name: Provision instance with Ansible
       run: |
-        ansible-playbook -i "${{ steps.ec2ip.outputs.ip }}," \
-                         -u ubuntu \
-                         --private-key ~/.ssh/ec2_key \
-                         install_docker.yml
+        ansible-playbook \
+          -i ansible/inventory.ini \
+          ansible/install_docker.yml
