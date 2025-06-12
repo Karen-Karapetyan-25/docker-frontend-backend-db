@@ -74,7 +74,13 @@ jobs:
       with:
         terraform_version: 1.8.5
 
-    # ─── Terraform init/apply in infra/, using eu-central-1 ───────────
+    # ─── Terraform init/apply in infra/, using eu-central-1 ──────────
+    - name: Terraform init
+      run: terraform -chdir=Terraform init
+      env:
+        AWS_REGION:          ${{ env.TF_AWS_REGION }}
+        AWS_DEFAULT_REGION:  ${{ env.TF_AWS_REGION }}
+
     - name: Import IAM role if it already exists
       run: |
         set -e
@@ -83,12 +89,6 @@ jobs:
           terraform import aws_iam_role.ec2_ecr_readonly ec2-ecr-readonly-role
         terraform state show aws_iam_instance_profile.ec2_profile >/dev/null 2>&1 || \
           terraform import aws_iam_instance_profile.ec2_profile ec2-ecr-readonly-profile
-
-    - name: Terraform init
-      run: terraform -chdir=Terraform init
-      env:
-        AWS_REGION:          ${{ env.TF_AWS_REGION }}
-        AWS_DEFAULT_REGION:  ${{ env.TF_AWS_REGION }}
 
     - name: Terraform apply
       run: terraform -chdir=Terraform apply -auto-approve
