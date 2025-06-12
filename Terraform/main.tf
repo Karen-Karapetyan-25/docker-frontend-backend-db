@@ -81,6 +81,11 @@ resource "aws_instance" "app_host" {
   }
 }
 
+data "aws_vpc" "default" {
+  default = true          # the built-in VPC that exists in every region
+}
+
+
 variable "ssh_cidr" {
   type    = string
   default = "0.0.0.0/0"   # will be overwritten in CI
