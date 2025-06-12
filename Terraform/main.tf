@@ -109,3 +109,9 @@ resource "aws_security_group" "ssh_inbound" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 }
+
+
+output "ec2_public_ip" {
+  description = "Public IP of the Ubuntu host"
+  value       = aws_instance.app_host.public_ip
+}

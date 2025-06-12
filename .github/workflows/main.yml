@@ -91,30 +91,34 @@ jobs:
           terraform import aws_iam_instance_profile.ec2_profile ec2-ecr-readonly-profile
 
 # ─── Find runner IP & export TF_VAR_ssh_cidr ───────────────────────────
-    - name: Set SSH CIDR for this runner
-      id: ip
-      run: |
-        MYIP=$(curl -s https://api.ipify.org)
-        echo "TF_VAR_ssh_cidr=${MYIP}/32" >> $GITHUB_ENV
-        echo "Using SSH CIDR ${MYIP}/32"
+    # - name: Set SSH CIDR for this runner
+    #   id: ip
+    #   run: |
+    #     MYIP=$(curl -s https://api.ipify.org)
+    #     echo "TF_VAR_ssh_cidr=${MYIP}/32" >> $GITHUB_ENV
+    #     echo "Using SSH CIDR ${MYIP}/32"
 
 
+    # ─── Terraform apply ────────────────────────────────────────────────
     - name: Terraform apply
       run: terraform -chdir=Terraform apply -auto-approve
       env:
-        AWS_REGION:          ${{ env.TF_AWS_REGION }}
-        AWS_DEFAULT_REGION:  ${{ env.TF_AWS_REGION }}
+        AWS_REGION:         ${{ env.TF_AWS_REGION }}
+        AWS_DEFAULT_REGION: ${{ env.TF_AWS_REGION }}
 
-    # ─── Fetch EC2 public IP (tag Name=app-host) ──────────────────────
-    - id: ec2ip
-      name: Get EC2 public IP
+    # ─── Grab the IP from terraform output and build inventory ───────────
+    - name: Get EC2 IP & create inventory
+      id: ip
       run: |
-        IP=$(aws ec2 describe-instances \
-              --filters "Name=tag:Name,Values=app-host" "Name=instance-state-name,Values=running" \
-              --region ${{ env.TF_AWS_REGION }} \
-              --query "Reservations[0].Instances[0].PublicIpAddress" \
-              --output text)
-        echo "ip=$IP" >> "$GITHUB_OUTPUT"     
+        IP=$(terraform -chdir=Terraform output -raw ec2_public_ip)
+        echo "ec2_ip=$IP" >> "$GITHUB_OUTPUT"
+
+        mkdir -p ansible
+        cat > ansible/inventory.ini <<EOF
+        [app_host]
+        $IP ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/ec2_key
+        EOF
+ 
       
         
     # ─── Drop the SSH private key for Ansible use ─────────────────────
