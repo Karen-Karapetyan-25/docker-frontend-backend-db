@@ -5,103 +5,102 @@ on:
     branches: [ master ]
   workflow_dispatch:
 
+# ─── Global defaults ──────────────────────────────────────────────────
 env:
-  # ─── Regions ────────────────────────────────────────────
-  AWS_REGION: eu-west-1        # ECR (images)
-  TF_AWS_REGION: eu-central-1  # Terraform / EC2
+  # ECR / image-build region
+  AWS_REGION: eu-west-1
+  # Terraform / EC2 region (must match what you want in main.tf)
+  TF_AWS_REGION: eu-central-1
 
 jobs:
   build_and_provision:
     runs-on: ubuntu-latest
     permissions:
-      id-token: write
       contents: read
+      id-token: write       # needed by configure-aws-credentials OIDC
 
     steps:
-    # ───── Checkout ───────────────────────────────────────
+    # ─── Pull the repo ────────────────────────────────────────────────
     - uses: actions/checkout@v4
 
-    # ───── AWS creds & ECR login ──────────────────────────
-    - name: Configure AWS credentials
+    # ─── AWS creds for the ECR region (eu-west-1) ─────────────────────
+    - name: Configure AWS credentials (eu-west-1)
       uses: aws-actions/configure-aws-credentials@v4
       with:
         aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region:            ${{ env.AWS_REGION }}
 
-    - uses: aws-actions/amazon-ecr-login@v2
+    - name: Login to Amazon ECR
+      uses: aws-actions/amazon-ecr-login@v2
 
-    # ───── Build + tag Docker images ──────────────────────
+    # ─── Build & tag Docker images ────────────────────────────────────
     - name: Set image tags
       id: vars
       run: |
         SHA="${GITHUB_SHA::7}"
-        echo "FRONT=383313560305.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/frontend:${SHA}" >> "$GITHUB_OUTPUT"
-        echo "BACK=383313560305.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/backend:${SHA}"  >> "$GITHUB_OUTPUT"
+        echo "front=383313560305.dkr.ecr.${AWS_REGION}.amazonaws.com/frontend:${SHA}" >> "$GITHUB_OUTPUT"
+        echo "back=383313560305.dkr.ecr.${AWS_REGION}.amazonaws.com/backend:${SHA}"  >> "$GITHUB_OUTPUT"
 
-    - name: Build frontend
-      run: docker build -t ${{ steps.vars.outputs.FRONT }} ./frontend
+    - name: Build frontend image
+      run: docker build -t ${{ steps.vars.outputs.front }} ./frontend
 
-    - name: Build backend
-      run: docker build -t ${{ steps.vars.outputs.BACK }} ./backend
+    - name: Build backend image
+      run: docker build -t ${{ steps.vars.outputs.back }} ./backend
 
-    # ───── Trivy scans (non-blocking) ─────────────────────
-    - uses: aquasecurity/trivy-action@0.19.0
+    # ─── Trivy scans (non-blocking) ───────────────────────────────────
+    - name: Scan frontend with Trivy
+      uses: aquasecurity/trivy-action@0.19.0
       with:
-        image-ref:      ${{ steps.vars.outputs.FRONT }}
+        image-ref:      ${{ steps.vars.outputs.front }}
+        exit-code:      0           # never fail the build
+        ignore-unfixed: true
+
+    - name: Scan backend with Trivy
+      uses: aquasecurity/trivy-action@0.19.0
+      with:
+        image-ref:      ${{ steps.vars.outputs.back }}
         exit-code:      0
         ignore-unfixed: true
 
-    - uses: aquasecurity/trivy-action@0.19.0
-      with:
-        image-ref:      ${{ steps.vars.outputs.BACK }}
-        exit-code:      0
-        ignore-unfixed: true
-
-    # ───── Push to ECR ────────────────────────────────────
-    - name: Push images
+    # ─── Push to ECR ──────────────────────────────────────────────────
+    - name: Push images to ECR
       run: |
-        docker push ${{ steps.vars.outputs.FRONT }}
-        docker push ${{ steps.vars.outputs.BACK }}
+        docker push ${{ steps.vars.outputs.front }}
+        docker push ${{ steps.vars.outputs.back }}
 
-    # ───── Terraform: create EC2 ──────────────────────────
+    # ─── Set up Terraform CLI (1.8.5) ─────────────────────────────────
     - uses: hashicorp/setup-terraform@v2
       with:
         terraform_version: 1.8.5
 
+    # ─── Terraform init/apply in infra/, using eu-central-1 ───────────
     - name: Terraform init
-      run: terraform init
+      run: terraform -chdir=Terraform init
       env:
-        AWS_REGION: ${{ env.TF_AWS_REGION }}
+        AWS_REGION:          ${{ env.TF_AWS_REGION }}
+        AWS_DEFAULT_REGION:  ${{ env.TF_AWS_REGION }}
 
     - name: Terraform apply
-      run: terraform apply -auto-approve
+      run: terraform -chdir=Terraform apply -auto-approve
       env:
-        AWS_REGION: ${{ env.TF_AWS_REGION }}
+        AWS_REGION:          ${{ env.TF_AWS_REGION }}
+        AWS_DEFAULT_REGION:  ${{ env.TF_AWS_REGION }}
 
-    # ───── Grab EC2 public IP ─────────────────────────────
+    # ─── Fetch EC2 public IP (tag Name=app-host) ──────────────────────
     - id: ec2ip
       name: Get EC2 public IP
       run: |
         IP=$(aws ec2 describe-instances \
               --filters "Name=tag:Name,Values=app-host" "Name=instance-state-name,Values=running" \
               --region ${{ env.TF_AWS_REGION }} \
-              --query "Reservations[0].Instances[0].PublicIpAddress" --output text)
-        echo "IP=$IP" >> "$GITHUB_OUTPUT"
+              --query "Reservations[0].Instances[0].PublicIpAddress" \
+              --output text)
+        echo "ip=$IP" >> "$GITHUB_OUTPUT"
 
-    # ───── Prepare SSH key for Ansible ────────────────────
+    # ─── Drop the SSH private key for Ansible use ─────────────────────
     - name: Write SSH private key
       run: |
-        echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ec2_key
-        chmod 600 ~/.ec2_key
-
-    # ───── Install Ansible ────────────────────────────────
-    - name: Install Ansible
-      run: |
-        sudo apt-get update -y
-        sudo apt-get install -y ansible
-
-    # ───── Run Ansible playbook to install Docker/Compose ─
-    - name: Install Docker with Ansible
-      run: |
-        ansible-playbook -i "${{ steps.ec2ip.outputs.IP }}," -u ec2-user --private-key ~/.ec2_key install_docker.yml
+        mkdir -p ~/.ssh
+        echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/ec2_key
+        chmod 600 ~/.ssh/ec2_key
