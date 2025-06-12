@@ -106,31 +106,15 @@ jobs:
         AWS_DEFAULT_REGION:  ${{ env.TF_AWS_REGION }}
 
     # ─── Fetch EC2 public IP (tag Name=app-host) ──────────────────────
-    - name: Get EC2 public IP
-      id: ec2ip
+    - id: ec2ip
+      name: Get EC2 public IP
       run: |
         IP=$(aws ec2 describe-instances \
-        --filters "Name=tag:Name,Values=app-host" "Name=instance-state-name,Values=running" \
-        --region ${{ env.TF_AWS_REGION }} \
-        --query "Reservations[0].Instances[0].PublicIpAddress" \
-        --output text)
-        echo "ip=$IP" >> "$GITHUB_OUTPUT"
-
-    - name: Wait for SSH to be ready
-      run: |
-          IP=${{ steps.ec2ip.outputs.ip }}
-          for i in {1..30}; do
-            if ssh -o StrictHostKeyChecking=no -i ~/.ssh/ec2_key \
-                  -o ConnectTimeout=5 ubuntu@$IP 'echo ok' 2>/dev/null; then
-              echo "SSH reachable"
-              exit 0
-            fi
-            echo "Waiting for SSH ($i/30)…"
-            sleep 10
-          done
-          echo "Timed out waiting for SSH" >&2
-          exit 1
-      
+              --filters "Name=tag:Name,Values=app-host" "Name=instance-state-name,Values=running" \
+              --region ${{ env.TF_AWS_REGION }} \
+              --query "Reservations[0].Instances[0].PublicIpAddress" \
+              --output text)
+        echo "ip=$IP" >> "$GITHUB_OUTPUT"     
       
         
     # ─── Drop the SSH private key for Ansible use ─────────────────────
