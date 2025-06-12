@@ -108,11 +108,12 @@ jobs:
 
     # ─── Grab the IP from terraform output and build inventory ───────────
     - name: Get EC2 IP & create inventory
-      id: ip
+      id: inventory
       run: |
-        IP=$(terraform -chdir=Terraform output -raw ec2_public_ip)
-        echo "ec2_ip=$IP" >> "$GITHUB_OUTPUT"
-
+        set -e
+        IP=$(terraform -chdir=Terraform output -raw ec2_public_ip 2>/dev/null | tr -d '\n')
+        echo "ip=$IP" >> "$GITHUB_OUTPUT"
+    
         mkdir -p ansible
         cat > ansible/inventory.ini <<EOF
         [app_host]
@@ -150,3 +151,4 @@ jobs:
         ansible-playbook \
           -i ansible/inventory.ini \
           ansible/install_docker.yml
+  
