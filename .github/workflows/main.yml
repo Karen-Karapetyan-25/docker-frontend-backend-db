@@ -76,13 +76,13 @@ jobs:
 
     # ─── Terraform init/apply in infra/, using eu-central-1 ───────────
     - name: Terraform init
-      run: terraform -chdir=infra init
+      run: terraform -chdir=Terraform init
       env:
         AWS_REGION:          ${{ env.TF_AWS_REGION }}
         AWS_DEFAULT_REGION:  ${{ env.TF_AWS_REGION }}
 
     - name: Terraform apply
-      run: terraform -chdir=infra apply -auto-approve
+      run: terraform -chdir=Terraform apply -auto-approve
       env:
         AWS_REGION:          ${{ env.TF_AWS_REGION }}
         AWS_DEFAULT_REGION:  ${{ env.TF_AWS_REGION }}
