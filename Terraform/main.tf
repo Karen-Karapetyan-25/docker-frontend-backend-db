@@ -80,3 +80,27 @@ resource "aws_instance" "app_host" {
     Name = "app-host"
   }
 }
+
+variable "ssh_cidr" {
+  type    = string
+  default = "0.0.0.0/0"   # will be overwritten in CI
+}
+
+resource "aws_security_group" "ssh_inbound" {
+  name   = "allow-ssh-ci"
+  vpc_id = data.aws_vpc.default.id
+
+  ingress {
+    protocol    = "tcp"
+    from_port   = 22
+    to_port     = 22
+    cidr_blocks = [var.ssh_cidr]
+  }
+
+  egress {
+    protocol    = "-1"
+    from_port   = 0
+    to_port     = 0
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}

@@ -90,6 +90,15 @@ jobs:
         terraform state show aws_iam_instance_profile.ec2_profile >/dev/null 2>&1 || \
           terraform import aws_iam_instance_profile.ec2_profile ec2-ecr-readonly-profile
 
+# ─── Find runner IP & export TF_VAR_ssh_cidr ───────────────────────────
+    - name: Set SSH CIDR for this runner
+      id: ip
+      run: |
+        MYIP=$(curl -s https://api.ipify.org)
+        echo "TF_VAR_ssh_cidr=${MYIP}/32" >> $GITHUB_ENV
+        echo "Using SSH CIDR ${MYIP}/32"
+
+
     - name: Terraform apply
       run: terraform -chdir=Terraform apply -auto-approve
       env:
@@ -97,16 +106,33 @@ jobs:
         AWS_DEFAULT_REGION:  ${{ env.TF_AWS_REGION }}
 
     # ─── Fetch EC2 public IP (tag Name=app-host) ──────────────────────
-    - id: ec2ip
-      name: Get EC2 public IP
+    - name: Get EC2 public IP
+      id: ec2ip
       run: |
         IP=$(aws ec2 describe-instances \
-              --filters "Name=tag:Name,Values=app-host" "Name=instance-state-name,Values=running" \
-              --region ${{ env.TF_AWS_REGION }} \
-              --query "Reservations[0].Instances[0].PublicIpAddress" \
-              --output text)
+        --filters "Name=tag:Name,Values=app-host" "Name=instance-state-name,Values=running" \
+        --region ${{ env.TF_AWS_REGION }} \
+        --query "Reservations[0].Instances[0].PublicIpAddress" \
+        --output text)
         echo "ip=$IP" >> "$GITHUB_OUTPUT"
 
+    - name: Wait for SSH to be ready
+      run: |
+          IP=${{ steps.ec2ip.outputs.ip }}
+          for i in {1..30}; do
+            if ssh -o StrictHostKeyChecking=no -i ~/.ssh/ec2_key \
+                  -o ConnectTimeout=5 ubuntu@$IP 'echo ok' 2>/dev/null; then
+              echo "SSH reachable"
+              exit 0
+            fi
+            echo "Waiting for SSH ($i/30)…"
+            sleep 10
+          done
+          echo "Timed out waiting for SSH" >&2
+          exit 1
+      
+      
+        
     # ─── Drop the SSH private key for Ansible use ─────────────────────
     - name: Write SSH private key
       run: |
