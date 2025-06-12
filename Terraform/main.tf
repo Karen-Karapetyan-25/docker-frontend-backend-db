@@ -5,6 +5,7 @@ terraform {
   backend "s3" {
     bucket = "kkarapetyans-bucket"
     region = "eu-west-1"
+    key    = "terraform.tfstate"   # ← the “some key” it needs
   }
 }
 
