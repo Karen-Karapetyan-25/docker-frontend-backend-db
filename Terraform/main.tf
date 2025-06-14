@@ -1,12 +1,15 @@
+########################################################################
+# Terraform Configuration
+########################################################################
 terraform {
   required_version = ">= 1.5.0"
 
   backend "s3" {
-    bucket         = "kkarapetyans-bucket"
-    region         = "eu-west-1"
-    key            = "terraform.tfstate"
-    encrypt        = true
-    dynamodb_table = "terraform-lock" # Recommended for state locking
+    bucket  = "kkarapetyans-bucket"
+    region  = "eu-west-1"
+    key     = "terraform.tfstate"
+    encrypt = true
+    # Removed dynamodb_table parameter completely
   }
 
   required_providers {
@@ -17,7 +20,9 @@ terraform {
   }
 }
 
-
+########################################################################
+# Providers
+########################################################################
 provider "aws" {
   region = "eu-west-1"
 
@@ -29,7 +34,9 @@ provider "aws" {
   }
 }
 
-
+########################################################################
+# Data Sources
+########################################################################
 data "aws_ami" "ubuntu_22_04" {
   most_recent = true
   owners      = ["099720109477"] # Canonical
@@ -65,12 +72,16 @@ data "http" "github_ips" {
   url = "https://api.github.com/meta"
 }
 
-
+########################################################################
+# Locals
+########################################################################
 locals {
   github_ips = try(jsondecode(data.http.github_ips.body).actions, ["0.0.0.0/0"])
 }
 
-
+########################################################################
+# IAM Resources
+########################################################################
 data "aws_iam_policy_document" "ec2_assume_role" {
   statement {
     actions = ["sts:AssumeRole"]
@@ -101,7 +112,9 @@ resource "aws_iam_instance_profile" "ec2_profile" {
   role = aws_iam_role.ec2_ecr_readonly.name
 }
 
-
+########################################################################
+# Networking
+########################################################################
 resource "aws_security_group" "app_sg" {
   name        = "app-security-group"
   description = "Controls access to the application"
@@ -136,7 +149,9 @@ resource "aws_security_group" "app_sg" {
   }
 }
 
-
+########################################################################
+# EC2 Instance
+########################################################################
 resource "aws_instance" "app_host" {
   ami                    = data.aws_ami.ubuntu_22_04.id
   instance_type          = "t2.micro"
@@ -159,13 +174,11 @@ resource "aws_instance" "app_host" {
   tags = {
     Name = "app-host"
   }
-
-  lifecycle {
-    create_before_destroy = true
-  }
 }
 
-
+########################################################################
+# Outputs
+########################################################################
 output "ec2_public_ip" {
   description = "Public IP address of the EC2 instance"
   value       = aws_instance.app_host.public_ip
