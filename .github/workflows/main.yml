@@ -122,36 +122,47 @@ jobs:
     - name: Install SSH key
       run: |
         mkdir -p ~/.ssh
-        echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/ec2_key
+        echo "${{ secrets.EC2_SSH_PRIVATE_KEY }}" > ~/.ssh/ec2_key
+        echo "${{ secrets.EC2_SSH_PUBLIC_KEY }}" > ~/.ssh/ec2_key.pub
         chmod 600 ~/.ssh/ec2_key
+        chmod 644 ~/.ssh/ec2_key.pub
+        # Add public key to known_hosts
+        ssh-keyscan ${{ steps.tf_out.outputs.ip }} >> ~/.ssh/known_hosts
 
-    - name: Verify SSH key
+    - name: Verify SSH setup
       run: |
+        echo "Private key:"
         ls -la ~/.ssh/ec2_key
-        ssh-keygen -lf ~/.ssh/ec2_key    
+        echo "Public key:"
+        ls -la ~/.ssh/ec2_key.pub
+        echo "Known hosts:"
+        cat ~/.ssh/known_hosts   
 
     - name: Wait for SSH
       run: |
-        # Get clean IP from outputs using full terraform path
-        IP=$(${{ env.TERRAFORM_CLI_PATH }} -chdir=Terraform output -raw ec2_public_ip | head -1)
+        IP=${{ steps.tf_out.outputs.ip }}
         
-        # Verify IP is valid
+        # Verify IP format
         if [[ ! "$IP" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
           echo "::error::Invalid IP address: $IP"
           exit 1
         fi
         
-        # SSH connection attempt with timeout
-        for i in {1..10}; do
-          echo "Attempt $i to connect to $IP..."
-          if ssh -o StrictHostKeyChecking=no -i ~/.ssh/ec2_key -o ConnectTimeout=10 -o BatchMode=yes ubuntu@$IP 'echo SSH Connection Successful'; then
+        # SSH connection with full debugging
+        for i in {1..15}; do
+          echo "Attempt $i/15 to connect to $IP..."
+          ssh -vvv -o StrictHostKeyChecking=no \
+              -o UserKnownHostsFile=~/.ssh/known_hosts \
+              -i ~/.ssh/ec2_key \
+              -o ConnectTimeout=15 \
+              ubuntu@$IP 'echo "SSH Connection Successful"' && {
             echo "SSH ready"
             exit 0
-          fi
+          }
           sleep 10
         done
         
-        echo "::error::SSH connection failed after 10 attempts"
+        echo "::error::SSH connection failed after 15 attempts"
         exit 1
 
 
