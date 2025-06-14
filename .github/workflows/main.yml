@@ -102,6 +102,17 @@ jobs:
         echo "instance_id=$ID" >> $GITHUB_OUTPUT
 
 
+    - name: Debug Terraform outputs
+      run: |
+        cd Terraform
+        terraform output
+
+    - name: Check instance status
+      run: |
+        cd Terraform
+        aws ec2 describe-instance-status --instance-id $(terraform output -raw ec2_instance_id)
+
+
     - name: Write inventory
       run: |
         mkdir -p ansible
@@ -116,14 +127,18 @@ jobs:
         echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/ec2_key
         chmod 600 ~/.ssh/ec2_key
 
+    - name: Verify SSH key
+      run: |
+        ls -la ~/.ssh/ec2_key
+        ssh-keygen -lf ~/.ssh/ec2_key    
 
     - name: Wait for SSH
       run: |
-        # Get clean IP from outputs
-        IP=${{ steps.tf_out.outputs.ip }}
+        # Get clean IP from outputs using full terraform path
+        IP=$(${{ env.TERRAFORM_CLI_PATH }} -chdir=Terraform output -raw ec2_public_ip | head -1)
         
         # Verify IP is valid
-        if [[ ! $IP =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        if [[ ! "$IP" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
           echo "::error::Invalid IP address: $IP"
           exit 1
         fi
