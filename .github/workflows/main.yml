@@ -78,7 +78,7 @@ jobs:
   
 
     - name: Terraform apply
-      run: terraform -chdir=Terraform apply -auto-approve
+      run: terraform -chdir=Terraform -replace="aws_security_group.app_sg" apply -auto-approve
       env:
         AWS_REGION: ${{ env.TF_AWS_REGION }}
         AWS_DEFAULT_REGION: ${{ env.TF_AWS_REGION }}

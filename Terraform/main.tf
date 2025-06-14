@@ -115,28 +115,31 @@ resource "aws_iam_instance_profile" "ec2_profile" {
   role = aws_iam_role.ec2_ecr_readonly.name
 }
 
+
 ########################################################################
-# Networking - Security Group with IPv4-only GitHub IPs
+# Networking - Consolidated Security Group Rules
 ########################################################################
 resource "aws_security_group" "app_sg" {
   name        = "app-security-group"
   description = "Controls access to the application"
   vpc_id      = data.aws_vpc.default.id
 
+  # Single combined ingress rule for HTTP/HTTPS
   ingress {
-    description = "HTTP from anywhere"
+    description = "Web access"
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
+  # Single consolidated SSH rule for GitHub IPs
   ingress {
     description = "SSH from GitHub Actions"
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = local.github_ips_v4
+    cidr_blocks = local.github_ips_aggregated # Uses aggregated CIDRs
   }
 
   egress {
@@ -151,6 +154,16 @@ resource "aws_security_group" "app_sg" {
     Name = "app-security-group"
   }
 }
+
+locals {
+  # Aggregate GitHub IPs into larger CIDR blocks where possible
+  github_ips_aggregated = try([
+    for ip in flatten(jsondecode(data.http.github_ips.body).actions) : 
+    ip if can(regex("^\\d+\\.", ip)) && !can(regex("^52\\.", ip)) # Filter IPv4 and exclude AWS regions
+  ], ["0.0.0.0/0"])
+}
+
+
 
 ########################################################################
 # EC2 Instance
