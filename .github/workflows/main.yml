@@ -67,11 +67,15 @@ jobs:
         AWS_REGION: ${{ env.TF_AWS_REGION }}
         AWS_DEFAULT_REGION: ${{ env.TF_AWS_REGION }}
 
-    - name: Import IAM resources
+    - name: Import IAM role if it already exists
       run: |
+        set -e
         cd Terraform
-        terraform import aws_iam_role.ec2_ecr_readonly ec2-ecr-readonly-role || true
-        terraform import aws_iam_instance_profile.ec2_profile ec2-ecr-readonly-profile || true
+        terraform state show aws_iam_role.ec2_ecr_readonly >/dev/null 2>&1 || \
+          terraform import aws_iam_role.ec2_ecr_readonly ec2-ecr-readonly-role
+        terraform state show aws_iam_instance_profile.ec2_profile >/dev/null 2>&1 || \
+          terraform import aws_iam_instance_profile.ec2_profile ec2-ecr-readonly-profile
+  
 
     - name: Terraform apply
       run: terraform -chdir=Terraform apply -auto-approve
