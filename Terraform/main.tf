@@ -29,24 +29,35 @@ provider "aws" {
 }
 
 
-# ---- Latest Ubuntu 22.04 AMI ----
 data "aws_ami" "ubuntu_22_04" {
   most_recent = true
-  owners      = ["099720109477"] # Canonical
+  owners      = ["099720109477"]
 
-  filter { name = "name"               values = ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"] }
-  filter { name = "architecture"       values = ["x86_64"] }
-  filter { name = "virtualization-type" values = ["hvm"] }
+  filter {
+    name   = "name"
+    values = ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"]
+  }
+
+  filter {
+    name   = "architecture"
+    values = ["x86_64"]
+  }
+
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
 }
 
-# ---- Default VPC & subnets ----
+
+
 data "aws_vpc" "default" { default = true }
 
 data "aws_subnets" "default" {
   filter { name = "vpc-id" values = [data.aws_vpc.default.id] }
 }
 
-# ---- GitHub Actions public IP ranges ----
+
 data "http" "github_meta" {
   url = "https://api.github.com/meta"
 }
