@@ -10,7 +10,7 @@ env:
   # ECR / image-build region
   AWS_REGION: eu-west-1
   # Terraform / EC2 region (must match what you want in main.tf)
-  TF_AWS_REGION: eu-central-1
+  TF_AWS_REGION: eu-west-1
 
 jobs:
   build_and_provision:
@@ -106,6 +106,10 @@ jobs:
         AWS_REGION:         ${{ env.TF_AWS_REGION }}
         AWS_DEFAULT_REGION: ${{ env.TF_AWS_REGION }}
 
+    - name: Debug Terraform IP output
+      run: |
+        echo "IP from Terraform: $(terraform -chdir=Terraform output -raw ec2_public_ip)"
+
     # ─── Grab the IP from terraform output and build inventory ───────────
     - name: Get EC2 IP & create inventory
       id: inventory
@@ -122,7 +126,6 @@ jobs:
  
       
         
-    # ─── Drop the SSH private key for Ansible use ─────────────────────
     - name: Write SSH private key
       run: |
         mkdir -p ~/.ssh
@@ -148,6 +151,7 @@ jobs:
     # ─── Run playbook: Docker + Compose ────────────────────────────────
     - name: Provision instance with Ansible
       run: |
+        export ANSIBLE_HOST_KEY_CHECKING=False
         ansible-playbook \
           -i ansible/inventory.ini \
           ansible/install_docker.yml
