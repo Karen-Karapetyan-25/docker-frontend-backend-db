@@ -88,10 +88,11 @@ jobs:
     - name: Fetch outputs
       id: tf_out
       run: |
-        IP=$(terraform -chdir=Terraform output -raw ec2_public_ip)
-        ID=$(terraform -chdir=Terraform output -raw ec2_instance_id)
-        echo "ip=$IP"          >> "$GITHUB_OUTPUT"
-        echo "instance_id=$ID" >> "$GITHUB_OUTPUT"
+        IP=$(terraform -chdir=Terraform output -raw ec2_public_ip 2>&1 | tail -1)
+        ID=$(terraform -chdir=Terraform output -raw ec2_instance_id 2>&1 | tail -1)
+        echo "ip=${IP}" >> $GITHUB_OUTPUT
+        echo "instance_id=${ID}" >> $GITHUB_OUTPUT
+      shell: bash
 
 
     - name: Write inventory
