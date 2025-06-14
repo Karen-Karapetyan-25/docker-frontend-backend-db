@@ -17,149 +17,106 @@ jobs:
       id-token: write
 
     steps:
+
     - uses: actions/checkout@v4
 
-    # AWS Setup
+
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v4
       with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: ${{ env.AWS_REGION }}
+        aws-region:            ${{ env.AWS_REGION }}
 
-    - name: Login to Amazon ECR
-      uses: aws-actions/amazon-ecr-login@v2
+    - uses: aws-actions/amazon-ecr-login@v2
 
-    # Docker Build and Push
-    - name: Set image tags
+
+    - name: Compute image tags
       id: vars
       run: |
         SHA="${GITHUB_SHA::7}"
         echo "front=383313560305.dkr.ecr.${AWS_REGION}.amazonaws.com/frontend:${SHA}" >> "$GITHUB_OUTPUT"
-        echo "back=383313560305.dkr.ecr.${AWS_REGION}.amazonaws.com/backend:${SHA}" >> "$GITHUB_OUTPUT"
+        echo "back=383313560305.dkr.ecr.${AWS_REGION}.amazonaws.com/backend:${SHA}"  >> "$GITHUB_OUTPUT"
 
-    - name: Build frontend image
+    - name: Build frontend
       run: docker build -t ${{ steps.vars.outputs.front }} ./frontend
 
-    - name: Build backend image
+    - name: Build backend
       run: docker build -t ${{ steps.vars.outputs.back }} ./backend
 
-    - name: Scan images with Trivy
+    - name: Trivy scan
       uses: aquasecurity/trivy-action@0.19.0
       with:
-        image-ref: ${{ steps.vars.outputs.front }}
+        image-ref: |
+          ${{ steps.vars.outputs.front }}
+          ${{ steps.vars.outputs.back }}
         exit-code: 0
         ignore-unfixed: true
 
-    - name: Push images to ECR
+    - name: Push images
       run: |
         docker push ${{ steps.vars.outputs.front }}
         docker push ${{ steps.vars.outputs.back }}
 
-    # Terraform Deployment
+
     - uses: hashicorp/setup-terraform@v2
-      with:
-        terraform_version: 1.8.5
+      with: { terraform_version: 1.8.5 }
 
     - name: Terraform init
       run: terraform -chdir=Terraform init
-      env:
-        AWS_REGION: ${{ env.TF_AWS_REGION }}
-        AWS_DEFAULT_REGION: ${{ env.TF_AWS_REGION }}
 
-    - name: Import IAM role if it already exists
+    - name: Import pre-existing IAM artefacts (idempotent)
       run: |
-        set -e
         cd Terraform
-        terraform state show aws_iam_role.ec2_ecr_readonly >/dev/null 2>&1 || \
-          terraform import aws_iam_role.ec2_ecr_readonly ec2-ecr-readonly-role
-        terraform state show aws_iam_instance_profile.ec2_profile >/dev/null 2>&1 || \
-          terraform import aws_iam_instance_profile.ec2_profile ec2-ecr-readonly-profile
-  
+        terraform state list | grep -q aws_iam_role.ec2_ecr_readonly \
+          || terraform import aws_iam_role.ec2_ecr_readonly ec2-ecr-readonly-role
+        terraform state list | grep -q aws_iam_instance_profile.ec2_profile \
+          || terraform import aws_iam_instance_profile.ec2_profile ec2-ecr-readonly-profile
 
     - name: Terraform apply
-      run: terraform -chdir=Terraform apply -replace="aws_security_group.app_sg" -auto-approve
-      env:
-        AWS_REGION: ${{ env.TF_AWS_REGION }}
-        AWS_DEFAULT_REGION: ${{ env.TF_AWS_REGION }}
+      run: terraform -chdir=Terraform apply -auto-approve
 
-    # Connection Setup
-    - name: Get EC2 IP
-      id: inventory
+
+    - name: Fetch outputs
+      id: tf_out
       run: |
-        IP=$(terraform -chdir=Terraform output -raw ec2_public_ip | tr -d '\n\r" ')
-        echo "IP (sanitized): '$IP'"
-        echo "ip=$IP" >> "$GITHUB_OUTPUT"
-        
-        # Verify IP format
-        if [[ ! $IP =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-          echo "Invalid IP address format!"
-          exit 1
-        fi
+        IP=$(terraform -chdir=Terraform output -raw ec2_public_ip)
+        ID=$(terraform -chdir=Terraform output -raw ec2_instance_id)
+        echo "ip=$IP"          >> "$GITHUB_OUTPUT"
+        echo "instance_id=$ID" >> "$GITHUB_OUTPUT"
 
-    - name: Create inventory file
+
+    - name: Write inventory
       run: |
         mkdir -p ansible
         cat > ansible/inventory.ini <<EOF
         [app_host]
-        ${{ steps.inventory.outputs.ip }} ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/ec2_key
+        ${{ steps.tf_out.outputs.ip }} ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/ec2_key
         EOF
-        echo "Inventory contents:"
-        cat ansible/inventory.ini
 
-    - name: Setup SSH key
+    - name: Install SSH key
       run: |
         mkdir -p ~/.ssh
         echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/ec2_key
         chmod 600 ~/.ssh/ec2_key
-        echo "SSH key fingerprint:"
-        ssh-keygen -lf ~/.ssh/ec2_key
 
-    # Network Validation
-    - name: Validate network connectivity
+
+    - name: Wait for SSH up to 3 min
       run: |
-        IP=${{ steps.inventory.outputs.ip }}
-        
-        echo "Testing basic connectivity..."
-        ping -c 4 $IP || echo "Ping test failed"
-        
-        echo "Testing port 22..."
-        if nc -z -w 5 $IP 22; then
-          echo "Port 22 is open"
-        else
-          echo "ERROR: Port 22 not accessible"
-          echo "Checking security groups..."
-          aws ec2 describe-security-groups \
-            --query "SecurityGroups[?contains(IpPermissions[].FromPort, \`22\`)].{GroupId: GroupId, IpPermissions: IpPermissions}" \
-            --output json
-          exit 1
-        fi
+        IP=${{ steps.tf_out.outputs.ip }}
+        for i in {1..5}; do
+          echo "Attempt $i..."
+          if ssh -o StrictHostKeyChecking=no -i ~/.ssh/ec2_key -o ConnectTimeout=10 ubuntu@$IP 'echo ok' 2>/dev/null; then
+            echo "SSH ready"; exit 0; fi
+          sleep 5
+        done
+        echo "SSH not reachable"; exit 1
 
-    - name: Test SSH connection
-      run: |
-        export ANSIBLE_HOST_KEY_CHECKING=False
-        IP=${{ steps.inventory.outputs.ip }}
-        echo "Testing SSH to $IP..."
-        ssh -i ~/.ssh/ec2_key \
-            -o ConnectTimeout=15 \
-            -o StrictHostKeyChecking=no \
-            -o BatchMode=yes \
-            ubuntu@$IP echo "SSH connection successful" || {
-          echo "SSH failed, checking instance status..."
-          aws ec2 describe-instance-status \
-            --instance-ids $(terraform -chdir=Terraform output -raw ec2_instance_id) \
-            --query "InstanceStatuses[].{State: InstanceState.Name, Status: InstanceStatus.Status}" \
-            --output table
-          exit 1
-        }
 
-    # Ansible Deployment
     - name: Install Ansible
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y ansible
+      run: sudo apt-get update && sudo apt-get install -y ansible
 
-    - name: Create Docker Compose file
+    - name: Render docker-compose.yml
       run: |
         mkdir -p ansible/files
         cat > ansible/files/docker-compose.yml <<EOF
@@ -167,30 +124,24 @@ jobs:
         services:
           frontend:
             image: ${{ steps.vars.outputs.front }}
-            ports:
-              - "80:80"
+            ports: ["80:80"]
             restart: always
           backend:
             image: ${{ steps.vars.outputs.back }}
-            ports:
-              - "3000:3000"
+            ports: ["3000:3000"]
             restart: always
         EOF
 
-    - name: Run Ansible deployment
+    - name: Deploy with Ansible
       run: |
-        export ANSIBLE_HOST_KEY_CHECKING=False
-        ansible-playbook \
-          -i ansible/inventory.ini \
+        ANSIBLE_HOST_KEY_CHECKING=False \
+        ansible-playbook -i ansible/inventory.ini ansible/deploy_app.yml \
           -e "frontend_image=${{ steps.vars.outputs.front }}" \
-          -e "backend_image=${{ steps.vars.outputs.back }}" \
-          ansible/deploy_app.yml
+          -e "backend_image=${{ steps.vars.outputs.back }}"
 
-    # Post-Deployment Verification
-    - name: Verify deployment
+
+    - name: Verify services
       run: |
-        IP=${{ steps.inventory.outputs.ip }}
-        echo "Testing frontend on http://$IP"
-        curl --retry 3 --retry-delay 5 -fsS http://$IP || echo "Frontend verification failed"
-        echo "Testing backend on http://$IP:3000"
-        curl --retry 3 --retry-delay 5 -fsS http://$IP:3000 || echo "Backend verification failed"
+        IP=${{ steps.tf_out.outputs.ip }}
+        curl -fsS --retry 5 --retry-delay 5 http://$IP
+        curl -fsS --retry 5 --retry-delay 5 http://$IP:3000

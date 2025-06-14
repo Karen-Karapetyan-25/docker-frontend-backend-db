@@ -1,40 +1,80 @@
-########################################################################
-# Terraform state backend
-########################################################################
 terraform {
+  required_version = ">= 1.5.0"
+
   backend "s3" {
-    bucket = "kkarapetyans-bucket"
-    region = "eu-west-1"
-    key    = "terraform.tfstate"   # ← the “some key” it needs
+    bucket  = "kkarapetyans-bucket"
+    region  = "eu-west-1"
+    key     = "terraform.tfstate"
+    encrypt = true
+  }
+
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
   }
 }
 
-########################################################################
-# Providers
-########################################################################
+
 provider "aws" {
   region = "eu-west-1"
+
+  default_tags {
+    tags = {
+      Environment = "production"
+      Terraform   = "true"
+    }
+  }
 }
 
-########################################################################
-# IAM — allow the EC2 instance to pull from ECR (read-only)
-########################################################################
+
+# ---- Latest Ubuntu 22.04 AMI ----
+data "aws_ami" "ubuntu_22_04" {
+  most_recent = true
+  owners      = ["099720109477"] # Canonical
+
+  filter { name = "name"               values = ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"] }
+  filter { name = "architecture"       values = ["x86_64"] }
+  filter { name = "virtualization-type" values = ["hvm"] }
+}
+
+# ---- Default VPC & subnets ----
+data "aws_vpc" "default" { default = true }
+
+data "aws_subnets" "default" {
+  filter { name = "vpc-id" values = [data.aws_vpc.default.id] }
+}
+
+# ---- GitHub Actions public IP ranges ----
+data "http" "github_meta" {
+  url = "https://api.github.com/meta"
+}
+
+locals {
+  # IPv4 only (fallback → open SSH եթե API-ն հասանելի չէ)
+  github_actions_ipv4 = try([
+    for ip in jsondecode(data.http.github_meta.body).actions :
+    ip if can(regex("^\\d+\\.\\d+\\.\\d+\\.\\d+/\\d+$", ip))
+  ], ["0.0.0.0/0"])
+}
+
+
 data "aws_iam_policy_document" "ec2_assume_role" {
   statement {
-    actions = ["sts:AssumeRole"]
-    principals {
-      type        = "Service"
-      identifiers = ["ec2.amazonaws.com"]
-    }
+    actions    = ["sts:AssumeRole"]
+    principals { type = "Service" identifiers = ["ec2.amazonaws.com"] }
   }
 }
 
 resource "aws_iam_role" "ec2_ecr_readonly" {
   name               = "ec2-ecr-readonly-role"
   assume_role_policy = data.aws_iam_policy_document.ec2_assume_role.json
+  description        = "Allows EC2 instances to pull images from ECR"
+  tags               = { Service = "ecr-readonly" }
 }
 
-resource "aws_iam_role_policy_attachment" "attach_ecr_readonly" {
+resource "aws_iam_role_policy_attachment" "ecr_readonly" {
   role       = aws_iam_role.ec2_ecr_readonly.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
 }
@@ -44,67 +84,25 @@ resource "aws_iam_instance_profile" "ec2_profile" {
   role = aws_iam_role.ec2_ecr_readonly.name
 }
 
-########################################################################
-# AMI lookup — latest Ubuntu 22.04 LTS (Jammy) x86-64 for eu-west-1
-########################################################################
-data "aws_ami" "ubuntu_22_04" {
-  most_recent = true
-  owners      = ["099720109477"]   # Canonical
 
-  filter {
-    name   = "name"
-    values = ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"]
-  }
-
-  filter {
-    name   = "architecture"
-    values = ["x86_64"]
-  }
-
-  filter {
-    name   = "virtualization-type"
-    values = ["hvm"]
-  }
-}
-
-########################################################################
-# EC2 instance
-########################################################################
-resource "aws_instance" "app_host" {
-  ami                  = data.aws_ami.ubuntu_22_04.id
-  instance_type        = "t2.micro"
-  iam_instance_profile = aws_iam_instance_profile.ec2_profile.name
-
-  tags = {
-    Name = "app-host"
-  }
-}
-
-data "aws_vpc" "default" {
-  default = true          # the built-in VPC that exists in every region
-}
-
-
-variable "ssh_cidr" {
-  type    = string
-  default = "0.0.0.0/0"   # will be overwritten in CI
-}
-
-resource "aws_security_group" "web" {
-  name        = "allow_web"
-  description = "Allow HTTP/SSH traffic"
+resource "aws_security_group" "app_sg" {
+  name        = "app-sg"
+  description = "Allow SSH from GitHub Actions and HTTP 80"
+  vpc_id      = data.aws_vpc.default.id
 
   ingress {
+    description = "SSH from GitHub Actions"
+    protocol    = "tcp"
+    from_port   = 22
+    to_port     = 22
+    cidr_blocks = local.github_actions_ipv4
+  }
+
+  ingress {
+    description = "HTTP"
+    protocol    = "tcp"
     from_port   = 80
     to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  ingress {
-    from_port   = 22  # SSH
-    to_port     = 22
-    protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
@@ -114,45 +112,45 @@ resource "aws_security_group" "web" {
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
+
+  tags = { Name = "app-sg" }
 }
 
-resource "aws_security_group" "allow_ssh" {
-  name        = "allow_ssh"
-  description = "Allow SSH inbound traffic"
 
-  ingress {
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"] # For testing - restrict to GitHub IPs later
+resource "aws_instance" "app_host" {
+  ami                         = data.aws_ami.ubuntu_22_04.id
+  instance_type               = "t2.micro"
+  subnet_id                   = data.aws_subnets.default.ids[0]
+  vpc_security_group_ids      = [aws_security_group.app_sg.id]
+  iam_instance_profile        = aws_iam_instance_profile.ec2_profile.name
+  associate_public_ip_address = true
+
+  root_block_device {
+    volume_type = "gp3"
+    volume_size = 20
+    encrypted   = true
   }
 
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
+  metadata_options {
+    http_endpoint = "enabled"
+    http_tokens   = "required"
   }
+
+  tags = { Name = "app-host" }
 }
 
-data "http" "github_ips" {
-  url = "https://api.github.com/meta"
-}
-
-locals {
-  github_ips = jsondecode(data.http.github_ips.body).actions
-}
-
-resource "aws_security_group" "github_actions" {
-  ingress {
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = local.github_ips
-  }
-}
 
 output "ec2_public_ip" {
-  description = "Public IP of the Ubuntu host"
+  description = "Public IP address of the EC2 instance"
   value       = aws_instance.app_host.public_ip
+}
+
+output "ec2_instance_id" {
+  description = "ID of the EC2 instance"
+  value       = aws_instance.app_host.id
+}
+
+output "security_group_id" {
+  description = "ID of the security group"
+  value       = aws_security_group.app_sg.id
 }
