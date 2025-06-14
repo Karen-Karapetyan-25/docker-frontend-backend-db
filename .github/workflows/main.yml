@@ -120,12 +120,19 @@ jobs:
         head -n 1 ~/.ssh/ec2_key  # Should show "-----BEGIN RSA PRIVATE KEY-----"
 
 
-    - name: Create Ansible inventory
+    - name: Generate inventory
+      id: inventory
       run: |
-        mkdir -p ansible            # workspace already in repo root
-        sed "s|<IP>|${{ steps.ec2ip.outputs.ip }}|" \
-            ansible/inventory_template.ini \
-            > ansible/inventory.ini
+        IP=$(terraform -chdir=Terraform output -raw ec2_public_ip | tr -d '\n\r" ')
+        echo "ip=${IP}" >> "$GITHUB_OUTPUT"
+        mkdir -p ansible
+        cat > ansible/inventory.ini <<EOF
+        [app_host]
+        ${IP} ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/ec2_key
+        EOF
+      
+    - name: Debug inventory
+      run: cat ansible/inventory.ini
 
 
     - name: Install Ansible
