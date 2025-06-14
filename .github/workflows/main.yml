@@ -142,3 +142,37 @@ jobs:
           -i ansible/inventory.ini \
           ansible/install_docker.yml
   
+
+    # (Previous steps remain the same until after Ansible installation...)
+
+    - name: Create Docker Compose file
+      run: |
+        mkdir -p ansible/files
+        cat > ansible/files/docker-compose.yml <<EOF
+        version: '3.8'
+        services:
+          frontend:
+            image: ${{ steps.vars.outputs.front }}
+            ports:
+              - "80:80"
+            restart: always
+          backend:
+            image: ${{ steps.vars.outputs.back }}
+            ports:
+              - "3000:3000"
+            restart: always
+        EOF
+        echo "Docker Compose file created:"
+        cat ansible/files/docker-compose.yml
+
+    - name: Verify Ansible can connect
+      run: |
+        export ANSIBLE_HOST_KEY_CHECKING=False
+        ansible -i ansible/inventory.ini app_host -m ping
+
+    - name: Run deployment playbook
+      run: |
+        export ANSIBLE_HOST_KEY_CHECKING=False
+        ansible-playbook \
+          -i ansible/inventory.ini \
+          ansible/deploy_app.yml
