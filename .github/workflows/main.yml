@@ -121,27 +121,32 @@ jobs:
 
     - name: Setup SSH access
       run: |
+        # Setup SSH directory
         mkdir -p ~/.ssh
         chmod 700 ~/.ssh
         
+        # Install private key (replace with your actual secret)
         echo "${{ secrets.EC2_SSH_PRIVATE_KEY }}" > ~/.ssh/ec2_key
         chmod 600 ~/.ssh/ec2_key
         
-        cd Terraform
-        IP=$(terraform output -raw ec2_public_ip)
+        # Get EC2 instance IP using full terraform path
+        IP=$(${{ env.TERRAFORM_CLI_PATH }} -chdir=Terraform output -raw ec2_public_ip | head -1)
         echo "Target EC2 IP: $IP"
         
+        # Verify IP format
         if [[ ! "$IP" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
           echo "::error::Invalid IP address: $IP"
           exit 1
         fi
         
+        # Add to known_hosts
         ssh-keyscan -H $IP >> ~/.ssh/known_hosts 2>/dev/null
         
+        # Test SSH connection
         echo "Testing SSH connection..."
         ssh -o StrictHostKeyChecking=no \
             -i ~/.ssh/ec2_key \
-            -o ConnectTimeout=10 \
+            -o ConnectTimeout=15 \
             ubuntu@$IP 'echo "SSH test successful"'
 
     - name: Verify SSH setup
