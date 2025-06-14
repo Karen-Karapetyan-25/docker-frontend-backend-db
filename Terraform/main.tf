@@ -100,6 +100,11 @@ data "aws_ec2_managed_prefix_list" "github_actions" {
 }
 
 
+data "aws_prefix_list" "github_actions" {
+  name = "com.amazonaws.global.cloudprefixlist/github-ipv4"
+}
+
+
 resource "aws_security_group" "app_sg" {
   name        = "app-sg"
   description = "Allow SSH from GitHub Actions and HTTP from anywhere"
