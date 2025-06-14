@@ -91,21 +91,28 @@ variable "ssh_cidr" {
   default = "0.0.0.0/0"   # will be overwritten in CI
 }
 
-resource "aws_security_group" "ssh_inbound" {
-  name   = "allow-ssh-ci"
-  vpc_id = data.aws_vpc.default.id
+resource "aws_security_group" "web" {
+  name        = "allow_web"
+  description = "Allow HTTP/SSH traffic"
 
   ingress {
+    from_port   = 80
+    to_port     = 80
     protocol    = "tcp"
-    from_port   = 22
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    from_port   = 22  # SSH
     to_port     = 22
-    cidr_blocks = [var.ssh_cidr]
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
   egress {
-    protocol    = "-1"
     from_port   = 0
     to_port     = 0
+    protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
 }
