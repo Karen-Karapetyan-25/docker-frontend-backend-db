@@ -126,12 +126,7 @@ jobs:
       run: |
         sudo apt-get update -y
         sudo apt-get install -y ansible
-
-    - name: Test SSH connection
-      run: |
-        export ANSIBLE_HOST_KEY_CHECKING=False
-        IP=$(cat ansible/inventory.ini | grep -oP '([0-9]{1,3}\.){3}[0-9]{1,3}')
-        ssh -i ~/.ssh/ec2_key -o StrictHostKeyChecking=no -v ubuntu@$IP exit
+        
 
     - name: Create Docker Compose file
       run: |
