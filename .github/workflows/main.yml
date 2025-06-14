@@ -2,9 +2,8 @@ name: build-scan-push-provision
 
 on:
   push:
-    branches: [ master ]
+    branches: [master]
   workflow_dispatch:
-
 
 env:
   AWS_REGION: eu-west-1
@@ -23,9 +22,9 @@ jobs:
     - name: Configure AWS credentials (eu-west-1)
       uses: aws-actions/configure-aws-credentials@v4
       with:
-        aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region:            ${{ env.AWS_REGION }}
+        aws-region: ${{ env.AWS_REGION }}
 
     - name: Login to Amazon ECR
       uses: aws-actions/amazon-ecr-login@v2
@@ -35,7 +34,7 @@ jobs:
       run: |
         SHA="${GITHUB_SHA::7}"
         echo "front=383313560305.dkr.ecr.${AWS_REGION}.amazonaws.com/frontend:${SHA}" >> "$GITHUB_OUTPUT"
-        echo "back=383313560305.dkr.ecr.${AWS_REGION}.amazonaws.com/backend:${SHA}"  >> "$GITHUB_OUTPUT"
+        echo "back=383313560305.dkr.ecr.${AWS_REGION}.amazonaws.com/backend:${SHA}" >> "$GITHUB_OUTPUT"
 
     - name: Build frontend image
       run: docker build -t ${{ steps.vars.outputs.front }} ./frontend
@@ -46,34 +45,31 @@ jobs:
     - name: Scan frontend with Trivy
       uses: aquasecurity/trivy-action@0.19.0
       with:
-        image-ref:      ${{ steps.vars.outputs.front }}
-        exit-code:      0
+        image-ref: ${{ steps.vars.outputs.front }}
+        exit-code: 0
         ignore-unfixed: true
 
     - name: Scan backend with Trivy
       uses: aquasecurity/trivy-action@0.19.0
       with:
-        image-ref:      ${{ steps.vars.outputs.back }}
-        exit-code:      0
+        image-ref: ${{ steps.vars.outputs.back }}
+        exit-code: 0
         ignore-unfixed: true
-
 
     - name: Push images to ECR
       run: |
         docker push ${{ steps.vars.outputs.front }}
         docker push ${{ steps.vars.outputs.back }}
 
-
     - uses: hashicorp/setup-terraform@v2
       with:
         terraform_version: 1.8.5
 
-
     - name: Terraform init
       run: terraform -chdir=Terraform init
       env:
-        AWS_REGION:          ${{ env.TF_AWS_REGION }}
-        AWS_DEFAULT_REGION:  ${{ env.TF_AWS_REGION }}
+        AWS_REGION: ${{ env.TF_AWS_REGION }}
+        AWS_DEFAULT_REGION: ${{ env.TF_AWS_REGION }}
 
     - name: Import IAM role if it already exists
       run: |
@@ -84,66 +80,58 @@ jobs:
         terraform state show aws_iam_instance_profile.ec2_profile >/dev/null 2>&1 || \
           terraform import aws_iam_instance_profile.ec2_profile ec2-ecr-readonly-profile
 
-
     - name: Terraform apply
       run: terraform -chdir=Terraform apply -auto-approve
       env:
-        AWS_REGION:         ${{ env.TF_AWS_REGION }}
+        AWS_REGION: ${{ env.TF_AWS_REGION }}
         AWS_DEFAULT_REGION: ${{ env.TF_AWS_REGION }}
 
     - name: Debug Terraform IP output
       run: |
         echo "IP from Terraform: $(terraform -chdir=Terraform output -raw ec2_public_ip)"
 
-
     - name: Get EC2 IP & create inventory
       id: inventory
       run: |
         set -e
-        IP=$(terraform -chdir=Terraform output -raw ec2_public_ip | tr -d '\n\r" ')  # Remove newlines/quotes
-        echo "IP (sanitized): '$IP'"  # Debug log
+        IP=$(terraform -chdir=Terraform output -raw ec2_public_ip | tr -d '\n\r" ')
+        echo "IP (sanitized): '$IP'"
         echo "ip=$IP" >> "$GITHUB_OUTPUT"
         
         mkdir -p ansible
         cat > ansible/inventory.ini <<EOF
         [app_host]
         $IP ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/ec2_key
-        EOF 
-      
-        
+        EOF
+        echo "Inventory file created with contents:"
+        cat ansible/inventory.ini
+
     - name: Write SSH private key
       run: |
         mkdir -p ~/.ssh
         echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/ec2_key
         chmod 600 ~/.ssh/ec2_key
+        echo "SSH key file created:"
         ls -la ~/.ssh/ec2_key
-        head -n 1 ~/.ssh/ec2_key  # Should show "-----BEGIN RSA PRIVATE KEY-----"
+        head -n 1 ~/.ssh/ec2_key
 
-
-    - name: Create inventory dynamically
+    - name: Verify inventory file
       run: |
-        mkdir -p ansible
-        cat > ansible/inventory.ini <<EOF
-        [app_host]
-        ${{ steps.inventory.outputs.ip }} ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/ec2_key
-        EOF
-
+        echo "Inventory file contents:"
+        cat ansible/inventory.ini
+        echo "Testing inventory parsing:"
+        ansible-inventory -i ansible/inventory.ini --list
 
     - name: Install Ansible
       run: |
         sudo apt-get update -y
         sudo apt-get install -y ansible
 
-
-    - name: Provision instance with Ansible
+    - name: Test SSH connection
       run: |
         export ANSIBLE_HOST_KEY_CHECKING=False
-        ansible-playbook \
-          -i ansible/inventory.ini \
-          ansible/install_docker.yml
-  
-
-    # (Previous steps remain the same until after Ansible installation...)
+        IP=$(cat ansible/inventory.ini | grep -oP '([0-9]{1,3}\.){3}[0-9]{1,3}')
+        ssh -i ~/.ssh/ec2_key -o StrictHostKeyChecking=no -v ubuntu@$IP exit
 
     - name: Create Docker Compose file
       run: |
@@ -165,14 +153,17 @@ jobs:
         echo "Docker Compose file created:"
         cat ansible/files/docker-compose.yml
 
-    - name: Verify Ansible can connect
-      run: |
-        export ANSIBLE_HOST_KEY_CHECKING=False
-        ansible -i ansible/inventory.ini app_host -m ping
-
     - name: Run deployment playbook
       run: |
         export ANSIBLE_HOST_KEY_CHECKING=False
         ansible-playbook \
           -i ansible/inventory.ini \
           ansible/deploy_app.yml
+
+    - name: Verify deployment
+      run: |
+        IP=$(cat ansible/inventory.ini | grep -oP '([0-9]{1,3}\.){3}[0-9]{1,3}')
+        echo "Testing frontend on http://$IP"
+        curl -sSf http://$IP >/dev/null && echo "Frontend is up!" || echo "Frontend failed"
+        echo "Testing backend on http://$IP:3000"
+        curl -sSf http://$IP:3000 >/dev/null && echo "Backend is up!" || echo "Backend failed"
