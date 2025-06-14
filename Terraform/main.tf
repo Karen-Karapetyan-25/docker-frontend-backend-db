@@ -78,16 +78,23 @@ locals {
 
 data "aws_iam_policy_document" "ec2_assume_role" {
   statement {
-    actions    = ["sts:AssumeRole"]
-    principals { type = "Service" identifiers = ["ec2.amazonaws.com"] }
+    actions = ["sts:AssumeRole"]
+
+    principals {
+      type        = "Service"
+      identifiers = ["ec2.amazonaws.com"]
+    }
   }
 }
+
 
 resource "aws_iam_role" "ec2_ecr_readonly" {
   name               = "ec2-ecr-readonly-role"
   assume_role_policy = data.aws_iam_policy_document.ec2_assume_role.json
   description        = "Allows EC2 instances to pull images from ECR"
-  tags               = { Service = "ecr-readonly" }
+  tags               = { 
+    Service = "ecr-readonly" 
+  }
 }
 
 resource "aws_iam_role_policy_attachment" "ecr_readonly" {
