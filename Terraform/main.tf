@@ -69,9 +69,15 @@ data "aws_iam_policy_document" "ec2_assume_role" {
   }
 }
 
+
 resource "aws_iam_role" "ec2_ecr_readonly" {
   name               = "ec2-ecr-readonly-role"
   assume_role_policy = data.aws_iam_policy_document.ec2_assume_role.json
+}
+
+resource "aws_iam_role_policy_attachment" "ecr_pull" {
+  role       = aws_iam_role.ec2_ecr_readonly.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPowerUser"
 }
 
 resource "aws_iam_role_policy_attachment" "ecr_readonly" {
@@ -103,6 +109,14 @@ resource "aws_security_group" "app_sg" {
     to_port     = 80
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+      description = "Backend API"
+      from_port   = 3000
+      to_port     = 3000
+      protocol    = "tcp"
+      cidr_blocks = ["0.0.0.0/0"]
   }
 
   egress {
@@ -139,9 +153,9 @@ resource "aws_instance" "app_host" {
   user_data = <<-EOF
               #!/bin/bash
               apt-get update -y
-              apt-get install -y nginx
-              systemctl start nginx
-              systemctl enable nginx
+              apt-get install -y docker.io
+              systemctl enable docker
+              systemctl start docker
               EOF
 
   tags = {
@@ -152,14 +166,17 @@ resource "aws_instance" "app_host" {
 output "ec2_public_ip" {
   description = "Public IP address of the EC2 instance"
   value       = aws_instance.app_host.public_ip
+  sensitive   = false
 }
 
 output "ec2_public_dns" {
   description = "Public DNS name of the EC2 instance"
   value       = aws_instance.app_host.public_dns
+  sensitive   = false
 }
 
 output "ec2_instance_id" {
   description = "ID of the EC2 instance"
   value       = aws_instance.app_host.id
+  sensitive   = false
 }
