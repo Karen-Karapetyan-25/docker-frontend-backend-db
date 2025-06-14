@@ -5,11 +5,9 @@ on:
     branches: [ master ]
   workflow_dispatch:
 
-# ─── Global defaults ──────────────────────────────────────────────────
+
 env:
-  # ECR / image-build region
   AWS_REGION: eu-west-1
-  # Terraform / EC2 region (must match what you want in main.tf)
   TF_AWS_REGION: eu-west-1
 
 jobs:
@@ -17,13 +15,11 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write       # needed by configure-aws-credentials OIDC
+      id-token: write
 
     steps:
-    # ─── Pull the repo ────────────────────────────────────────────────
     - uses: actions/checkout@v4
 
-    # ─── AWS creds for the ECR region (eu-west-1) ─────────────────────
     - name: Configure AWS credentials (eu-west-1)
       uses: aws-actions/configure-aws-credentials@v4
       with:
@@ -34,7 +30,6 @@ jobs:
     - name: Login to Amazon ECR
       uses: aws-actions/amazon-ecr-login@v2
 
-    # ─── Build & tag Docker images ────────────────────────────────────
     - name: Set image tags
       id: vars
       run: |
@@ -48,12 +43,11 @@ jobs:
     - name: Build backend image
       run: docker build -t ${{ steps.vars.outputs.back }} ./backend
 
-    # ─── Trivy scans (non-blocking) ───────────────────────────────────
     - name: Scan frontend with Trivy
       uses: aquasecurity/trivy-action@0.19.0
       with:
         image-ref:      ${{ steps.vars.outputs.front }}
-        exit-code:      0           # never fail the build
+        exit-code:      0
         ignore-unfixed: true
 
     - name: Scan backend with Trivy
@@ -63,18 +57,18 @@ jobs:
         exit-code:      0
         ignore-unfixed: true
 
-    # ─── Push to ECR ──────────────────────────────────────────────────
+
     - name: Push images to ECR
       run: |
         docker push ${{ steps.vars.outputs.front }}
         docker push ${{ steps.vars.outputs.back }}
 
-    # ─── Set up Terraform CLI (1.8.5) ─────────────────────────────────
+
     - uses: hashicorp/setup-terraform@v2
       with:
         terraform_version: 1.8.5
 
-    # ─── Terraform init/apply in infra/, using eu-central-1 ──────────
+
     - name: Terraform init
       run: terraform -chdir=Terraform init
       env:
@@ -90,16 +84,7 @@ jobs:
         terraform state show aws_iam_instance_profile.ec2_profile >/dev/null 2>&1 || \
           terraform import aws_iam_instance_profile.ec2_profile ec2-ecr-readonly-profile
 
-# ─── Find runner IP & export TF_VAR_ssh_cidr ───────────────────────────
-    # - name: Set SSH CIDR for this runner
-    #   id: ip
-    #   run: |
-    #     MYIP=$(curl -s https://api.ipify.org)
-    #     echo "TF_VAR_ssh_cidr=${MYIP}/32" >> $GITHUB_ENV
-    #     echo "Using SSH CIDR ${MYIP}/32"
 
-
-    # ─── Terraform apply ────────────────────────────────────────────────
     - name: Terraform apply
       run: terraform -chdir=Terraform apply -auto-approve
       env:
@@ -110,20 +95,20 @@ jobs:
       run: |
         echo "IP from Terraform: $(terraform -chdir=Terraform output -raw ec2_public_ip)"
 
-    # ─── Grab the IP from terraform output and build inventory ───────────
+
     - name: Get EC2 IP & create inventory
       id: inventory
       run: |
         set -e
-        IP=$(terraform -chdir=Terraform output -raw ec2_public_ip 2>/dev/null | tr -d '\n')
+        IP=$(terraform -chdir=Terraform output -raw ec2_public_ip | tr -d '\n\r" ')  # Remove newlines/quotes
+        echo "IP (sanitized): '$IP'"  # Debug log
         echo "ip=$IP" >> "$GITHUB_OUTPUT"
-    
+        
         mkdir -p ansible
         cat > ansible/inventory.ini <<EOF
         [app_host]
         $IP ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/ec2_key
-        EOF
- 
+        EOF 
       
         
     - name: Write SSH private key
@@ -131,10 +116,10 @@ jobs:
         mkdir -p ~/.ssh
         echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/ec2_key
         chmod 600 ~/.ssh/ec2_key
+        ls -la ~/.ssh/ec2_key
+        head -n 1 ~/.ssh/ec2_key  # Should show "-----BEGIN RSA PRIVATE KEY-----"
 
-       # (…everything up to SSH key write stays the same …)
 
-    # ─── Write dynamic inventory file ──────────────────────────────────
     - name: Create Ansible inventory
       run: |
         mkdir -p ansible            # workspace already in repo root
@@ -142,13 +127,13 @@ jobs:
             ansible/inventory_template.ini \
             > ansible/inventory.ini
 
-    # ─── Install Ansible ───────────────────────────────────────────────
+
     - name: Install Ansible
       run: |
         sudo apt-get update -y
         sudo apt-get install -y ansible
 
-    # ─── Run playbook: Docker + Compose ────────────────────────────────
+
     - name: Provision instance with Ansible
       run: |
         export ANSIBLE_HOST_KEY_CHECKING=False
