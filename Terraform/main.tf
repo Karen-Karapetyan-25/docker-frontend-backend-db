@@ -16,7 +16,6 @@ terraform {
   }
 }
 
-
 provider "aws" {
   region = "eu-west-1"
 
@@ -28,10 +27,9 @@ provider "aws" {
   }
 }
 
-
 data "aws_ami" "ubuntu_22_04" {
   most_recent = true
-  owners      = ["099720109477"]
+  owners      = ["099720109477"] # Canonical
 
   filter {
     name   = "name"
@@ -49,9 +47,8 @@ data "aws_ami" "ubuntu_22_04" {
   }
 }
 
-
-data "aws_vpc" "default" { 
-  default = true 
+data "aws_vpc" "default" {
+  default = true
 }
 
 data "aws_subnets" "default" {
@@ -60,7 +57,6 @@ data "aws_subnets" "default" {
     values = [data.aws_vpc.default.id]
   }
 }
-
 
 data "aws_iam_policy_document" "ec2_assume_role" {
   statement {
@@ -73,14 +69,9 @@ data "aws_iam_policy_document" "ec2_assume_role" {
   }
 }
 
-
 resource "aws_iam_role" "ec2_ecr_readonly" {
   name               = "ec2-ecr-readonly-role"
   assume_role_policy = data.aws_iam_policy_document.ec2_assume_role.json
-  description        = "Allows EC2 instances to pull images from ECR"
-  tags               = { 
-    Service = "ecr-readonly" 
-  }
 }
 
 resource "aws_iam_role_policy_attachment" "ecr_readonly" {
@@ -93,58 +84,31 @@ resource "aws_iam_instance_profile" "ec2_profile" {
   role = aws_iam_role.ec2_ecr_readonly.name
 }
 
-
-data "aws_ec2_managed_prefix_list" "github_actions" {
-  # this is the AWS-provided list of all GitHub Actions IPv4 CIDRs
-  name = "com.amazonaws.global.cloudprefixlist/github-ipv4"
-}
-
-
-# Fetch GitHub Actions IP ranges
-data "http" "github_meta" {
-  url = "https://api.github.com/meta"
-}
-
-# Parse only the IPv4 CIDRs out of the “actions” list
-locals {
-  github_actions_ipv4 = try([
-    for cidr in jsondecode(data.http.github_meta.response_body).actions :
-    cidr if can(regex("^\\d+\\.\\d+\\.\\d+\\.\\d+\\/\\d+$", cidr))
-  ], ["0.0.0.0/0"])
-}
-
-# Your security group now dynamically creates one SSH rule per CIDR
 resource "aws_security_group" "app_sg" {
   name        = "app-sg"
-  description = "Allow SSH from GitHub Actions & HTTP from anywhere"
+  description = "Allow SSH from anywhere and HTTP from anywhere"
   vpc_id      = data.aws_vpc.default.id
 
-  dynamic "ingress" {
-    for_each = local.github_actions_ipv4
-    content {
-      description = "SSH from GitHub Actions"
-      protocol    = "tcp"
-      from_port   = 22
-      to_port     = 22
-      cidr_blocks = [ingress.value]
-    }
-  }
-
-  # Static HTTP rule
   ingress {
-    description = "HTTP from anywhere"
+    description = "SSH from anywhere"
+    from_port   = 22
+    to_port     = 22
     protocol    = "tcp"
-    from_port   = 80
-    to_port     = 80
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  # Allow all outbound
+  ingress {
+    description = "HTTP from anywhere"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
   egress {
-    description = "All outbound"
-    protocol    = "-1"
     from_port   = 0
     to_port     = 0
+    protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
@@ -152,8 +116,6 @@ resource "aws_security_group" "app_sg" {
     Name = "app-sg"
   }
 }
-
-
 
 resource "aws_instance" "app_host" {
   ami                         = data.aws_ami.ubuntu_22_04.id
@@ -174,21 +136,30 @@ resource "aws_instance" "app_host" {
     http_tokens   = "required"
   }
 
-  tags = { Name = "app-host" }
-}
+  user_data = <<-EOF
+              #!/bin/bash
+              apt-get update -y
+              apt-get install -y nginx
+              systemctl start nginx
+              systemctl enable nginx
+              EOF
 
+  tags = {
+    Name = "app-host"
+  }
+}
 
 output "ec2_public_ip" {
   description = "Public IP address of the EC2 instance"
   value       = aws_instance.app_host.public_ip
 }
 
+output "ec2_public_dns" {
+  description = "Public DNS name of the EC2 instance"
+  value       = aws_instance.app_host.public_dns
+}
+
 output "ec2_instance_id" {
   description = "ID of the EC2 instance"
   value       = aws_instance.app_host.id
-}
-
-output "security_group_id" {
-  description = "ID of the security group"
-  value       = aws_security_group.app_sg.id
 }
