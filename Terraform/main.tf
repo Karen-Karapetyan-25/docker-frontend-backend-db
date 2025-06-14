@@ -108,21 +108,30 @@ resource "aws_iam_instance_profile" "ec2_profile" {
 }
 
 
+data "aws_ec2_managed_prefix_list" "github_actions" {
+  # this is the AWS-provided list of all GitHub Actions IPv4 CIDRs
+  name = "com.amazonaws.global.cloudprefixlist/github-ipv4"
+}
+
+
 resource "aws_security_group" "app_sg" {
   name        = "app-sg"
-  description = "Allow SSH from GitHub Actions and HTTP 80"
+  description = "Allow SSH from GitHub Actions and HTTP from anywhere"
   vpc_id      = data.aws_vpc.default.id
 
+  # one rule, one prefix-list → no RulesPerSecurityGroupLimitExceeded
   ingress {
-    description = "SSH from GitHub Actions"
-    protocol    = "tcp"
-    from_port   = 22
-    to_port     = 22
-    cidr_blocks = local.github_actions_ipv4
+    description     = "SSH from GitHub Actions"
+    protocol        = "tcp"
+    from_port       = 22
+    to_port         = 22
+
+    # instead of cidr_blocks = local.github_actions_ipv4
+    prefix_list_ids = [data.aws_ec2_managed_prefix_list.github_actions.id]
   }
 
   ingress {
-    description = "HTTP"
+    description = "HTTP from anywhere"
     protocol    = "tcp"
     from_port   = 80
     to_port     = 80
@@ -136,8 +145,11 @@ resource "aws_security_group" "app_sg" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  tags = { Name = "app-sg" }
+  tags = {
+    Name = "app-sg"
+  }
 }
+
 
 
 resource "aws_instance" "app_host" {
