@@ -88,11 +88,18 @@ jobs:
     - name: Fetch outputs
       id: tf_out
       run: |
-        IP=$(terraform -chdir=Terraform output -raw ec2_public_ip 2>&1 | tail -1)
-        ID=$(terraform -chdir=Terraform output -raw ec2_instance_id 2>&1 | tail -1)
-        echo "ip=${IP}" >> $GITHUB_OUTPUT
-        echo "instance_id=${ID}" >> $GITHUB_OUTPUT
-      shell: bash
+        # Get clean IP without debug info
+        IP=$(terraform -chdir=Terraform output -raw ec2_public_ip | head -1)
+        ID=$(terraform -chdir=Terraform output -raw ec2_instance_id | head -1)
+        
+        # Verify outputs are not empty
+        if [ -z "$IP" ] || [ -z "$ID" ]; then
+          echo "::error::Failed to get Terraform outputs"
+          exit 1
+        fi
+        
+        echo "ip=$IP" >> $GITHUB_OUTPUT
+        echo "instance_id=$ID" >> $GITHUB_OUTPUT
 
 
     - name: Write inventory
@@ -110,16 +117,29 @@ jobs:
         chmod 600 ~/.ssh/ec2_key
 
 
-    - name: Wait for SSH up to 3 min
+    - name: Wait for SSH
       run: |
+        # Get clean IP from outputs
         IP=${{ steps.tf_out.outputs.ip }}
-        for i in {1..5}; do
-          echo "Attempt $i..."
-          if ssh -o StrictHostKeyChecking=no -i ~/.ssh/ec2_key -o ConnectTimeout=10 ubuntu@$IP 'echo ok' 2>/dev/null; then
-            echo "SSH ready"; exit 0; fi
-          sleep 5
+        
+        # Verify IP is valid
+        if [[ ! $IP =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          echo "::error::Invalid IP address: $IP"
+          exit 1
+        fi
+        
+        # SSH connection attempt with timeout
+        for i in {1..10}; do
+          echo "Attempt $i to connect to $IP..."
+          if ssh -o StrictHostKeyChecking=no -i ~/.ssh/ec2_key -o ConnectTimeout=10 -o BatchMode=yes ubuntu@$IP 'echo SSH Connection Successful'; then
+            echo "SSH ready"
+            exit 0
+          fi
+          sleep 10
         done
-        echo "SSH not reachable"; exit 1
+        
+        echo "::error::SSH connection failed after 10 attempts"
+        exit 1
 
 
     - name: Install Ansible
