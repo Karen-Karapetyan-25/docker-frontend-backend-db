@@ -9,7 +9,6 @@ terraform {
     region  = "eu-west-1"
     key     = "terraform.tfstate"
     encrypt = true
-    # Removed dynamodb_table parameter completely
   }
 
   required_providers {
@@ -76,7 +75,11 @@ data "http" "github_ips" {
 # Locals
 ########################################################################
 locals {
-  github_ips = try(jsondecode(data.http.github_ips.body).actions, ["0.0.0.0/0"])
+  # Filter GitHub IPs to only include IPv4 addresses
+  github_ips_v4 = try([
+    for ip in flatten(jsondecode(data.http.github_ips.body).actions) : 
+    ip if can(regex("^\\d+\\.", ip)) # Matches IPv4 addresses only
+  ], ["0.0.0.0/0"]) # Fallback if API call fails
 }
 
 ########################################################################
@@ -113,7 +116,7 @@ resource "aws_iam_instance_profile" "ec2_profile" {
 }
 
 ########################################################################
-# Networking
+# Networking - Security Group with IPv4-only GitHub IPs
 ########################################################################
 resource "aws_security_group" "app_sg" {
   name        = "app-security-group"
@@ -133,7 +136,7 @@ resource "aws_security_group" "app_sg" {
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = local.github_ips
+    cidr_blocks = local.github_ips_v4
   }
 
   egress {
