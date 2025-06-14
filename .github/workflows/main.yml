@@ -148,8 +148,9 @@ jobs:
           -e "backend_image=${{ steps.vars.outputs.back }}"
 
 
-    - name: Verify services
+    - name: Verify deployment
       run: |
         IP=${{ steps.tf_out.outputs.ip }}
+        curl -fsS --retry 5 --retry-delay 5 http://$IP:8080
         curl -fsS --retry 5 --retry-delay 5 http://$IP
-        curl -fsS --retry 5 --retry-delay 5 http://$IP:3000
+        curl -fsS --retry 5 --retry-delay 5 http://$IP:3000/api/health

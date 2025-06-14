@@ -75,14 +75,9 @@ resource "aws_iam_role" "ec2_ecr_readonly" {
   assume_role_policy = data.aws_iam_policy_document.ec2_assume_role.json
 }
 
-resource "aws_iam_role_policy_attachment" "ecr_pull" {
+resource "aws_iam_role_policy_attachment" "cloudwatch_agent" {
   role       = aws_iam_role.ec2_ecr_readonly.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPowerUser"
-}
-
-resource "aws_iam_role_policy_attachment" "ecr_readonly" {
-  role       = aws_iam_role.ec2_ecr_readonly.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+  policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
 }
 
 resource "aws_iam_instance_profile" "ec2_profile" {
@@ -117,6 +112,14 @@ resource "aws_security_group" "app_sg" {
       to_port     = 3000
       protocol    = "tcp"
       cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "Health checks"
+    from_port   = 8080
+    to_port     = 8080
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
   egress {
