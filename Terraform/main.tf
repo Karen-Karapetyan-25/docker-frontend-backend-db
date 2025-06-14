@@ -62,20 +62,6 @@ data "aws_subnets" "default" {
 }
 
 
-
-data "http" "github_meta" {
-  url = "https://api.github.com/meta"
-}
-
-locals {
-  # IPv4 only (fallback → open SSH եթե API-ն հասանելի չէ)
-  github_actions_ipv4 = try([
-    for ip in jsondecode(data.http.github_meta.body).actions :
-    ip if can(regex("^\\d+\\.\\d+\\.\\d+\\.\\d+/\\d+$", ip))
-  ], ["0.0.0.0/0"])
-}
-
-
 data "aws_iam_policy_document" "ec2_assume_role" {
   statement {
     actions = ["sts:AssumeRole"]
@@ -119,15 +105,12 @@ resource "aws_security_group" "app_sg" {
   description = "Allow SSH from GitHub Actions and HTTP from anywhere"
   vpc_id      = data.aws_vpc.default.id
 
-  # one rule, one prefix-list → no RulesPerSecurityGroupLimitExceeded
   ingress {
     description     = "SSH from GitHub Actions"
     protocol        = "tcp"
     from_port       = 22
     to_port         = 22
-
-    # instead of cidr_blocks = local.github_actions_ipv4
-    prefix_list_ids = [data.aws_ec2_managed_prefix_list.github_actions.id]
+    prefix_list_ids = [data.aws_prefix_list.github_actions.id]
   }
 
   ingress {
