@@ -100,24 +100,37 @@ data "aws_ec2_managed_prefix_list" "github_actions" {
 }
 
 
-data "aws_prefix_list" "github_actions" {
-  name = "com.amazonaws.global.cloudprefixlist/github-ipv4"
+# Fetch GitHub Actions IP ranges
+data "http" "github_meta" {
+  url = "https://api.github.com/meta"
 }
 
+# Parse only the IPv4 CIDRs out of the “actions” list
+locals {
+  github_actions_ipv4 = try([
+    for cidr in jsondecode(data.http.github_meta.response_body).actions :
+    cidr if can(regex("^\\d+\\.\\d+\\.\\d+\\.\\d+\\/\\d+$", cidr))
+  ], ["0.0.0.0/0"])
+}
 
+# Your security group now dynamically creates one SSH rule per CIDR
 resource "aws_security_group" "app_sg" {
   name        = "app-sg"
-  description = "Allow SSH from GitHub Actions and HTTP from anywhere"
+  description = "Allow SSH from GitHub Actions & HTTP from anywhere"
   vpc_id      = data.aws_vpc.default.id
 
-  ingress {
-    description     = "SSH from GitHub Actions"
-    protocol        = "tcp"
-    from_port       = 22
-    to_port         = 22
-    prefix_list_ids = [data.aws_prefix_list.github_actions.id]
+  dynamic "ingress" {
+    for_each = local.github_actions_ipv4
+    content {
+      description = "SSH from GitHub Actions"
+      protocol    = "tcp"
+      from_port   = 22
+      to_port     = 22
+      cidr_blocks = [ingress.value]
+    }
   }
 
+  # Static HTTP rule
   ingress {
     description = "HTTP from anywhere"
     protocol    = "tcp"
@@ -126,10 +139,12 @@ resource "aws_security_group" "app_sg" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
+  # Allow all outbound
   egress {
+    description = "All outbound"
+    protocol    = "-1"
     from_port   = 0
     to_port     = 0
-    protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
