@@ -119,15 +119,30 @@ jobs:
         ${{ steps.tf_out.outputs.ip }} ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/ec2_key
         EOF
 
-    - name: Install SSH key
+    - name: Setup SSH access
       run: |
         mkdir -p ~/.ssh
+        chmod 700 ~/.ssh
+        
         echo "${{ secrets.EC2_SSH_PRIVATE_KEY }}" > ~/.ssh/ec2_key
-        echo "${{ secrets.EC2_SSH_PUBLIC_KEY }}" > ~/.ssh/ec2_key.pub
         chmod 600 ~/.ssh/ec2_key
-        chmod 644 ~/.ssh/ec2_key.pub
-        # Add public key to known_hosts
-        ssh-keyscan ${{ steps.tf_out.outputs.ip }} >> ~/.ssh/known_hosts
+        
+        cd Terraform
+        IP=$(terraform output -raw ec2_public_ip)
+        echo "Target EC2 IP: $IP"
+        
+        if [[ ! "$IP" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          echo "::error::Invalid IP address: $IP"
+          exit 1
+        fi
+        
+        ssh-keyscan -H $IP >> ~/.ssh/known_hosts 2>/dev/null
+        
+        echo "Testing SSH connection..."
+        ssh -o StrictHostKeyChecking=no \
+            -i ~/.ssh/ec2_key \
+            -o ConnectTimeout=10 \
+            ubuntu@$IP 'echo "SSH test successful"'
 
     - name: Verify SSH setup
       run: |
