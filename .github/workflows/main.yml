@@ -84,6 +84,15 @@ jobs:
     - name: Terraform apply
       run: terraform -chdir=Terraform apply -auto-approve
 
+    - name: Check instance status
+      run: |
+        cd Terraform
+        aws ec2 describe-instance-status --instance-id $(terraform output -raw ec2_instance_id)
+
+    - name: Debug Terraform outputs
+      run: |
+        cd Terraform
+        terraform output
 
     - name: Fetch outputs
       id: tf_out
@@ -100,17 +109,6 @@ jobs:
         
         echo "ip=$IP" >> $GITHUB_OUTPUT
         echo "instance_id=$ID" >> $GITHUB_OUTPUT
-
-
-    - name: Debug Terraform outputs
-      run: |
-        cd Terraform
-        terraform output
-
-    - name: Check instance status
-      run: |
-        cd Terraform
-        aws ec2 describe-instance-status --instance-id $(terraform output -raw ec2_instance_id)
 
 
     - name: Write inventory
