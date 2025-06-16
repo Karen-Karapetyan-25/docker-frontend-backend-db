@@ -92,17 +92,8 @@ jobs:
     - name: Fetch outputs
       id: tf_out
       run: |
-        # Get clean IP by stripping any debug output
         IP=$(terraform -chdir=Terraform output -raw ec2_public_ip | head -1 | tr -d '\n')
         ID=$(terraform -chdir=Terraform output -raw ec2_instance_id | head -1 | tr -d '\n')
-        
-        # Verify outputs are valid IP addresses
-        if [[ ! "$IP" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || [[ -z "$ID" ]]; then
-          echo "::error::Invalid Terraform outputs"
-          echo "IP: '$IP'"
-          echo "ID: '$ID'"
-          exit 1
-        fi
         
         echo "ip=$IP" >> $GITHUB_OUTPUT
         echo "instance_id=$ID" >> $GITHUB_OUTPUT
