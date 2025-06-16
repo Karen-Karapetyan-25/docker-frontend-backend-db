@@ -87,27 +87,17 @@ jobs:
     - name: Fetch outputs
       id: tf_out
       run: |
-        set -euo pipefail
-
-        get() {
-          local name=$1
-          if ! out=$(terraform -chdir=Terraform output -raw "$name"); then
-            echo "::error::terraform output '$name' not found in state"
-            exit 1
-          fi
-          printf '%s' "$out"
-        }
-
-        IP=$(get ec2_public_ip)
-        ID=$(get ec2_instance_id)
-
-        if [[ -z "$IP" || -z "$ID" ]]; then
-          echo "::error::terraform output returned null / empty"
+        IP=$(terraform -chdir=Terraform output -raw ec2_public_ip | head -1)
+        ID=$(terraform -chdir=Terraform output -raw ec2_instance_id | head -1)
+        
+        if [ -z "$IP" ] || [ -z "$ID" ]; then
+          echo "::error::Failed to get Terraform outputs"
           exit 1
         fi
+        
+        echo "ip=$IP" >> $GITHUB_OUTPUT
+        echo "instance_id=$ID" >> $GITHUB_OUTPUT
 
-        echo "ip=$IP"         >> "$GITHUB_OUTPUT"
-        echo "instance_id=$ID" >> "$GITHUB_OUTPUT"
 
     - name: Debug outputs
       run: |
@@ -139,15 +129,6 @@ jobs:
         [app_host]
         ${{ steps.tf_out.outputs.ip }} ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/ec2_key
         EOF
-
-    # - name: Setup SSH access
-    #   run: |
-    #     mkdir -p ~/.ssh && chmod 700 ~/.ssh
-    #     echo "${{ env.SSH_PRIV }}" | base64 -d > ~/.ssh/ec2_key || { echo "Failed to decode SSH key"; exit 1; }
-    #     chmod 600 ~/.ssh/ec2_key
-    #     IP=${{ steps.tf_out.outputs.ip }}
-    #     echo "Target EC2 IP: $IP"
-    #     ssh-keyscan -H "$IP" >> ~/.ssh/known_hosts || { echo "Failed to add host to known_hosts"; exit 1; }
 
     - name: Wait for SSH
       run: |
