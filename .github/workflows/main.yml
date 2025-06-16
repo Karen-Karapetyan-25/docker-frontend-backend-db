@@ -92,18 +92,23 @@ jobs:
     - name: Fetch outputs
       id: tf_out
       run: |
-        # Get clean IP without debug info
-        IP=$(terraform -chdir=Terraform output -raw ec2_public_ip)
-        ID=$(terraform -chdir=Terraform output -raw ec2_instance_id)
-        
-        # Verify outputs are not empty
-        if [ -z "$IP" ] || [ -z "$ID" ]; then
-          echo "::error::Failed to get Terraform outputs"
+        IP=$(terraform -chdir=Terraform output -raw ec2_public_ip | head -1 | tr -d '\n')
+        ID=$(terraform -chdir=Terraform output -raw ec2_instance_id | head -1 | tr -d '\n')
+
+        if [[ -z "$IP" || -z "$ID" || "$IP" == *"::debug::"* ]]; then
+          echo "::error::Failed to get valid Terraform outputs"
+          echo "IP value: '$IP'"
+          echo "ID value: '$ID'"
           exit 1
         fi
         
         echo "ip=$IP" >> $GITHUB_OUTPUT
         echo "instance_id=$ID" >> $GITHUB_OUTPUT
+
+    - name: Debug outputs
+      run: |
+        echo "IP: ${{ steps.tf_out.outputs.ip }}"
+        echo "Instance ID: ${{ steps.tf_out.outputs.instance_id }}"
 
     - name: Setup SSH access
       run: |
