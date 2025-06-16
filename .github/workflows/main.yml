@@ -128,11 +128,11 @@ jobs:
     - name: Setup SSH access
       run: |
         mkdir -p ~/.ssh && chmod 700 ~/.ssh
-        echo "${{ env.SSH_PRIV }}" | base64 -d > ~/.ssh/ec2_key
+        echo "${{ env.SSH_PRIV }}" | base64 -d > ~/.ssh/ec2_key || { echo "Failed to decode SSH key"; exit 1; }
         chmod 600 ~/.ssh/ec2_key
-        IP=${{ steps.tf_out.outputs.ip }}
+        IP=$(terraform -chdir=Terraform output -raw ec2_public_ip | head -1) || { echo "Failed to get EC2 IP"; exit 1; }
         echo "Target EC2 IP: $IP"
-        ssh-keyscan -H "$IP" >> ~/.ssh/known_hosts 2>/dev/null
+        ssh-keyscan -H "$IP" >> ~/.ssh/known_hosts 2>/dev/null || { echo "Failed to add host to known_hosts"; exit 1; }
 
 
     - name: Verify SSH setup
