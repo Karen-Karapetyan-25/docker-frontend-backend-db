@@ -135,14 +135,12 @@ jobs:
         ssh-keyscan -H "$IP" >> ~/.ssh/known_hosts 2>/dev/null
 
 
-
     - name: Verify SSH setup
       run: |
         echo "Private key:"
         ls -la ~/.ssh/ec2_key
         echo "Known hosts:"
         cat ~/.ssh/known_hosts
-        # .pub չի լինի, որ pipeline-ը չկանգնի՝ թույլ ենք տալիս բացասական exit code-ը
         ls -la ~/.ssh/ec2_key.pub || true
 
 
