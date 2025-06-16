@@ -92,13 +92,15 @@ jobs:
     - name: Fetch outputs
       id: tf_out
       run: |
+        # Get clean IP by stripping any debug output
         IP=$(terraform -chdir=Terraform output -raw ec2_public_ip | head -1 | tr -d '\n')
         ID=$(terraform -chdir=Terraform output -raw ec2_instance_id | head -1 | tr -d '\n')
-
-        if [[ -z "$IP" || -z "$ID" || "$IP" == *"::debug::"* ]]; then
-          echo "::error::Failed to get valid Terraform outputs"
-          echo "IP value: '$IP'"
-          echo "ID value: '$ID'"
+        
+        # Verify outputs are valid IP addresses
+        if [[ ! "$IP" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || [[ -z "$ID" ]]; then
+          echo "::error::Invalid Terraform outputs"
+          echo "IP: '$IP'"
+          echo "ID: '$ID'"
           exit 1
         fi
         
@@ -114,9 +116,19 @@ jobs:
       run: |
         mkdir -p ~/.ssh && chmod 700 ~/.ssh
         echo "${{ env.SSH_PRIV }}" | base64 -d > ~/.ssh/ec2_key
-        chmod 600 ~/.ssh/ec2_key  # Important security setting
-        echo "EC2 IP from outputs: ${{ steps.tf_out.outputs.ip }}"
-        ssh-keyscan -H "${{ steps.tf_out.outputs.ip }}" >> ~/.ssh/known_hosts
+        chmod 600 ~/.ssh/ec2_key
+        
+        # Use the IP from tf_out outputs
+        IP=${{ steps.tf_out.outputs.ip }}
+        echo "Using EC2 IP: $IP"
+        
+        # Verify IP format
+        if [[ ! "$IP" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          echo "::error::Invalid IP address format: $IP"
+          exit 1
+        fi
+        
+        ssh-keyscan -H "$IP" >> ~/.ssh/known_hosts
 
     - name: Write inventory
       run: |
