@@ -93,8 +93,8 @@ jobs:
       id: tf_out
       run: |
         # Get clean IP without debug info
-        IP=$(terraform -chdir=Terraform output -raw ec2_public_ip | head -1)
-        ID=$(terraform -chdir=Terraform output -raw ec2_instance_id | head -1)
+        IP=$(terraform -chdir=Terraform output -raw ec2_public_ip)
+        ID=$(terraform -chdir=Terraform output -raw ec2_instance_id)
         
         # Verify outputs are not empty
         if [ -z "$IP" ] || [ -z "$ID" ]; then
@@ -105,6 +105,14 @@ jobs:
         echo "ip=$IP" >> $GITHUB_OUTPUT
         echo "instance_id=$ID" >> $GITHUB_OUTPUT
 
+    - name: Setup SSH access
+      run: |
+        mkdir -p ~/.ssh && chmod 700 ~/.ssh
+        echo "${{ env.SSH_PRIV }}" | base64 -d > ~/.ssh/ec2_key
+        chmod 600 ~/.ssh/ec2_key  # Important security setting
+        echo "EC2 IP from outputs: ${{ steps.tf_out.outputs.ip }}"
+        ssh-keyscan -H "${{ steps.tf_out.outputs.ip }}" >> ~/.ssh/known_hosts
+
     - name: Write inventory
       run: |
         mkdir -p ansible
@@ -113,14 +121,14 @@ jobs:
         ${{ steps.tf_out.outputs.ip }} ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/ec2_key
         EOF
 
-    - name: Setup SSH access
-      run: |
-        mkdir -p ~/.ssh && chmod 700 ~/.ssh
-        echo "${{ env.SSH_PRIV }}" | base64 -d > ~/.ssh/ec2_key || { echo "Failed to decode SSH key"; exit 1; }
-        chmod 600 ~/.ssh/ec2_key
-        IP=${{ steps.tf_out.outputs.ip }}
-        echo "Target EC2 IP: $IP"
-        ssh-keyscan -H "$IP" >> ~/.ssh/known_hosts || { echo "Failed to add host to known_hosts"; exit 1; }
+    # - name: Setup SSH access
+    #   run: |
+    #     mkdir -p ~/.ssh && chmod 700 ~/.ssh
+    #     echo "${{ env.SSH_PRIV }}" | base64 -d > ~/.ssh/ec2_key || { echo "Failed to decode SSH key"; exit 1; }
+    #     chmod 600 ~/.ssh/ec2_key
+    #     IP=${{ steps.tf_out.outputs.ip }}
+    #     echo "Target EC2 IP: $IP"
+    #     ssh-keyscan -H "$IP" >> ~/.ssh/known_hosts || { echo "Failed to add host to known_hosts"; exit 1; }
 
     - name: Wait for SSH
       run: |
