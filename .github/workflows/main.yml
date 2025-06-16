@@ -84,13 +84,6 @@ jobs:
       run: |
         terraform -chdir=Terraform apply -auto-approve -var="ssh_pub_key_path=${{ env.PUB_PATH }}"
 
-    - name: Debug Terraform outputs directly
-      run: |
-        echo "Raw ec2_public_ip output:"
-        terraform -chdir=Terraform output -raw ec2_public_ip
-        echo "Raw ec2_instance_id output:"
-        terraform -chdir=Terraform output -raw ec2_instance_id
-
     - name: Fetch outputs
       id: tf_out
       run: |
