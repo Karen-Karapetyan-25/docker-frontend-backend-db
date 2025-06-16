@@ -84,6 +84,13 @@ jobs:
       run: |
         terraform -chdir=Terraform apply -auto-approve -var="ssh_pub_key_path=${{ env.PUB_PATH }}"
 
+    - name: Show all outputs (debug)
+      run: |
+        echo "=== terraform output ==="
+        terraform -chdir=Terraform output
+        echo "=== terraform output -json ==="
+        terraform -chdir=Terraform output -json | jq .
+
     - name: Debug Terraform outputs directly
       run: |
         echo "Raw ec2_public_ip output:"
@@ -91,21 +98,31 @@ jobs:
         echo "Raw ec2_instance_id output:"
         terraform -chdir=Terraform output -raw ec2_instance_id
 
+
     - name: Fetch outputs
       id: tf_out
-      working-directory: Terraform
       run: |
-        IP=$(terraform -chdir=Terraform output -raw ec2_public_ip)
-        ID=$(terraform -chdir=Terraform output -raw ec2_instance_id)
+        set -euo pipefail
+
+        get() {
+          local name=$1
+          if ! out=$(terraform -chdir=Terraform output -raw "$name"); then
+            echo "::error::terraform output '$name' not found in state"
+            exit 1
+          fi
+          printf '%s' "$out"
+        }
+
+        IP=$(get ec2_public_ip)
+        ID=$(get ec2_instance_id)
 
         if [[ -z "$IP" || -z "$ID" ]]; then
-          echo "::error::terraform outputs are empty"
+          echo "::error::terraform output returned null / empty"
           exit 1
         fi
-        
+
         echo "ip=$IP"         >> "$GITHUB_OUTPUT"
         echo "instance_id=$ID" >> "$GITHUB_OUTPUT"
-
 
     - name: Debug outputs
       run: |
