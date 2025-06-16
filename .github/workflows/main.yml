@@ -7,6 +7,7 @@ on:
 
 env:
   AWS_REGION: eu-west-1
+  TF_AWS_REGION: eu-west-1
 
 jobs:
   build_and_provision:
@@ -31,9 +32,8 @@ jobs:
       id: vars
       run: |
         SHA="${GITHUB_SHA::7}"
-        ACC="${{ secrets.AWS_ACCOUNT_ID }}"      # ← account ID-ն վերցնենք secret-ից
-        echo "front=${ACC}.dkr.ecr.${AWS_REGION}.amazonaws.com/frontend:${SHA}" >> "$GITHUB_OUTPUT"
-        echo "back=${ACC}.dkr.ecr.${AWS_REGION}.amazonaws.com/backend:${SHA}"  >> "$GITHUB_OUTPUT"
+        echo "front=383313560305.dkr.ecr.${AWS_REGION}.amazonaws.com/frontend:${SHA}" >> "$GITHUB_OUTPUT"
+        echo "back=383313560305.dkr.ecr.${AWS_REGION}.amazonaws.com/backend:${SHA}"  >> "$GITHUB_OUTPUT"
 
     - name: Build frontend
       run: docker build -t ${{ steps.vars.outputs.front }} ./frontend
@@ -61,8 +61,7 @@ jobs:
         docker push ${{ steps.vars.outputs.back }}
 
     - uses: hashicorp/setup-terraform@v2
-      with:
-        terraform_version: 1.8.5
+      with: { terraform_version: 1.8.5 }
 
     - name: Terraform init
       run: terraform -chdir=Terraform init
@@ -77,20 +76,34 @@ jobs:
 
     - name: Generate one-time SSH key
       run: |
-        ssh-keygen -t ed25519 -f ci_key -N ""
-        echo "SSH_PRIV=$(base64 -w0 < ci_key)"   >> $GITHUB_ENV
+        ssh-keygen -t ed25519 -f ci_key -N ""   # priv: ci_key, pub: ci_key.pub
+        echo "SSH_PRIV=$(cat ci_key | base64 -w0)" >> $GITHUB_ENV
         echo "PUB_PATH=$PWD/ci_key.pub"          >> $GITHUB_ENV
 
     - name: Terraform apply
-      run: terraform -chdir=Terraform apply -auto-approve \
-             -var="ssh_pub_key_path=${{ env.PUB_PATH }}"
+      run: |
+        terraform -chdir=Terraform apply -auto-approve -var="ssh_pub_key_path=${{ env.PUB_PATH }}"
+
+    - name: Debug Terraform outputs
+      run: |
+        cd Terraform
+        terraform output
 
     - name: Fetch outputs
       id: tf_out
       run: |
-        IP=$(terraform -chdir=Terraform output -raw ec2_public_ip)
-        echo "ip=$IP"            >> $GITHUB_OUTPUT
-        echo "instance_id=$(terraform -chdir=Terraform output -raw ec2_instance_id)" >> $GITHUB_OUTPUT
+        # Get clean IP without debug info
+        IP=$(terraform -chdir=Terraform output -raw ec2_public_ip | head -1)
+        ID=$(terraform -chdir=Terraform output -raw ec2_instance_id | head -1)
+        
+        # Verify outputs are not empty
+        if [ -z "$IP" ] || [ -z "$ID" ]; then
+          echo "::error::Failed to get Terraform outputs"
+          exit 1
+        fi
+        
+        echo "ip=$IP" >> $GITHUB_OUTPUT
+        echo "instance_id=$ID" >> $GITHUB_OUTPUT
 
     - name: Write inventory
       run: |
@@ -104,7 +117,7 @@ jobs:
       run: |
         mkdir -p ~/.ssh && chmod 700 ~/.ssh
         echo "${{ env.SSH_PRIV }}" | base64 -d > ~/.ssh/ec2_key
-        chmod 600 ~/.ssh/ec2_key
+        chmod 644 ~/.ssh/ec2_key
         IP=${{ steps.tf_out.outputs.ip }}
         echo "Target EC2 IP: $IP"
         ssh-keyscan -H "$IP" >> ~/.ssh/known_hosts 2>/dev/null
@@ -113,11 +126,14 @@ jobs:
       run: |
         IP=${{ steps.tf_out.outputs.ip }}
         for i in {1..15}; do
-          echo "Attempt $i/15..."
-          ssh -o StrictHostKeyChecking=no -i ~/.ssh/ec2_key -o ConnectTimeout=15 \
-              ubuntu@"$IP" 'echo ok' && exit 0
+          echo "Attempt $i/15 to connect to $IP…"
+          ssh -o StrictHostKeyChecking=no \
+              -i ~/.ssh/ec2_key \
+              -o ConnectTimeout=15 \
+              ubuntu@"$IP" 'echo "ready"' && exit 0
           sleep 10
         done
+        echo "::error::SSH connection failed after 15 attempts"
         exit 1
 
     - name: Install Ansible
