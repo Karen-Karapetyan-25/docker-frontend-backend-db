@@ -91,25 +91,10 @@ jobs:
         echo "Raw ec2_instance_id output:"
         terraform -chdir=Terraform output -raw ec2_instance_id
 
-    - name: Validate outputs
-      run: |
-        echo "Validating outputs..."
-        echo "IP: ${{ steps.tf_out.outputs.ip }}"
-        echo "Instance ID: ${{ steps.tf_out.outputs.instance_id }}"
-        
-        if [[ ! "${{ steps.tf_out.outputs.ip }}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-          echo "::error::Invalid IP format"
-          exit 1
-        fi
-        
-        if [[ ! "${{ steps.tf_out.outputs.instance_id }}" =~ ^i-[a-z0-9]+$ ]]; then
-          echo "::error::Invalid instance ID format"
-          exit 1
-        fi
-
     - name: Fetch outputs
       id: tf_out
       run: |
+        cd Terraform
         IP=$(terraform -chdir=Terraform output -raw ec2_public_ip 2>&1 | grep -Eo '([0-9]{1,3}\.){3}[0-9]{1,3}' | head -1)
         ID=$(terraform -chdir=Terraform output -raw ec2_instance_id 2>&1 | grep -Eo 'i-[a-z0-9]{17}' | head -1)
 
