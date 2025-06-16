@@ -94,11 +94,6 @@ jobs:
         terraform -chdir=Terraform apply -auto-approve -var="ssh_pub_key_path=${{ env.PUB_PATH }}"
 
 
-    # - name: Check instance status
-    #   run: |
-    #     cd Terraform
-    #     aws ec2 describe-instance-status --instance-id $(terraform output -raw ec2_instance_id)
-
     - name: Debug Terraform outputs
       run: |
         cd Terraform
@@ -136,6 +131,7 @@ jobs:
         echo "${{ env.SSH_PRIV }}" | base64 -d > ~/.ssh/ec2_key
         chmod 600 ~/.ssh/ec2_key
         IP=${{ steps.tf_out.outputs.ip }}
+        echo "Target EC2 IP: $IP"
         ssh-keyscan -H "$IP" >> ~/.ssh/known_hosts 2>/dev/null
 
 
