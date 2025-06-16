@@ -87,17 +87,17 @@ jobs:
     - name: Fetch outputs
       id: tf_out
       run: |
-        IP=$(terraform -chdir=Terraform output -raw ec2_public_ip | head -1)
-        ID=$(terraform -chdir=Terraform output -raw ec2_instance_id | head -1)
-        
+        set +x
+        IP=$(terraform -chdir=Terraform output -raw ec2_public_ip)
+        ID=$(terraform -chdir=Terraform output -raw ec2_instance_id)
+
         if [ -z "$IP" ] || [ -z "$ID" ]; then
           echo "::error::Failed to get Terraform outputs"
           exit 1
         fi
-        
-        echo "ip=$IP" >> $GITHUB_OUTPUT
-        echo "instance_id=$ID" >> $GITHUB_OUTPUT
 
+        echo "ip=$IP"         >> "$GITHUB_OUTPUT"
+        echo "instance_id=$ID" >> "$GITHUB_OUTPUT"
 
     - name: Debug outputs
       run: |
