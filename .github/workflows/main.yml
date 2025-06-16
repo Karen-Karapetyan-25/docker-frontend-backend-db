@@ -119,72 +119,49 @@ jobs:
         ${{ steps.tf_out.outputs.ip }} ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/ec2_key
         EOF
 
+
     - name: Setup SSH access
       run: |
-        # Setup SSH directory
-        mkdir -p ~/.ssh
-        chmod 700 ~/.ssh
-        
-        # Install private key (replace with your actual secret)
+        mkdir -p ~/.ssh && chmod 700 ~/.ssh
         echo "${{ secrets.EC2_SSH_PRIVATE_KEY }}" > ~/.ssh/ec2_key
         chmod 600 ~/.ssh/ec2_key
-        
-        # Get EC2 instance IP using full terraform path
-        IP=$(${{ env.TERRAFORM_CLI_PATH }} -chdir=Terraform output -raw ec2_public_ip | head -1)
+
+        IP=${{ steps.tf_out.outputs.ip }}
         echo "Target EC2 IP: $IP"
-        
-        # Verify IP format
-        if [[ ! "$IP" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-          echo "::error::Invalid IP address: $IP"
-          exit 1
-        fi
-        
-        # Add to known_hosts
-        ssh-keyscan -H $IP >> ~/.ssh/known_hosts 2>/dev/null
-        
-        # Test SSH connection
-        echo "Testing SSH connection..."
+
+        ssh-keyscan -H "$IP" >> ~/.ssh/known_hosts 2>/dev/null
+
         ssh -o StrictHostKeyChecking=no \
             -i ~/.ssh/ec2_key \
             -o ConnectTimeout=15 \
-            ubuntu@$IP 'echo "SSH test successful"'
+            ubuntu@"$IP" 'echo "SSH test successful"'
+
 
     - name: Verify SSH setup
       run: |
         echo "Private key:"
         ls -la ~/.ssh/ec2_key
-        echo "Public key:"
-        ls -la ~/.ssh/ec2_key.pub
         echo "Known hosts:"
-        cat ~/.ssh/known_hosts   
+        cat ~/.ssh/known_hosts
+        # .pub չի լինի, որ pipeline-ը չկանգնի՝ թույլ ենք տալիս բացասական exit code-ը
+        ls -la ~/.ssh/ec2_key.pub || true
+
 
     - name: Wait for SSH
       run: |
         IP=${{ steps.tf_out.outputs.ip }}
-        
-        # Verify IP format
-        if [[ ! "$IP" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-          echo "::error::Invalid IP address: $IP"
-          exit 1
-        fi
-        
-        # SSH connection with full debugging
         for i in {1..15}; do
-          echo "Attempt $i/15 to connect to $IP..."
-          ssh -vvv -o StrictHostKeyChecking=no \
-              -o UserKnownHostsFile=~/.ssh/known_hosts \
+          echo "Attempt $i/15 to connect to $IP…"
+          ssh -o StrictHostKeyChecking=no \
               -i ~/.ssh/ec2_key \
               -o ConnectTimeout=15 \
-              ubuntu@$IP 'echo "SSH Connection Successful"' && {
-            echo "SSH ready"
-            exit 0
-          }
+              ubuntu@"$IP" 'echo "ready"' && exit 0
           sleep 10
         done
-        
         echo "::error::SSH connection failed after 15 attempts"
         exit 1
 
+        
 
     - name: Install Ansible
       run: sudo apt-get update && sudo apt-get install -y ansible
