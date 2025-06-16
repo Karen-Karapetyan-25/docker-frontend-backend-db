@@ -129,19 +129,10 @@ jobs:
       run: |
         mkdir -p ~/.ssh && chmod 700 ~/.ssh
         echo "${{ env.SSH_PRIV }}" | base64 -d > ~/.ssh/ec2_key
-        chmod 600 ~/.ssh/ec2_key
+        chmod 644 ~/.ssh/ec2_key
         IP=${{ steps.tf_out.outputs.ip }}
         echo "Target EC2 IP: $IP"
         ssh-keyscan -H "$IP" >> ~/.ssh/known_hosts 2>/dev/null
-
-
-    - name: Verify SSH setup
-      run: |
-        echo "Private key:"
-        ls -la ~/.ssh/ec2_key
-        echo "Known hosts:"
-        cat ~/.ssh/known_hosts
-        ls -la ~/.ssh/ec2_key.pub || true
 
 
     - name: Wait for SSH
