@@ -81,8 +81,18 @@ jobs:
         terraform state list | grep -q aws_iam_instance_profile.ec2_profile \
           || terraform import aws_iam_instance_profile.ec2_profile ec2-ecr-readonly-profile
 
+
+    - name: Generate one-time SSH key
+      run: |
+        ssh-keygen -t ed25519 -f ci_key -N ""   # priv: ci_key, pub: ci_key.pub
+        echo "SSH_PRIV=$(cat ci_key | base64 -w0)" >> $GITHUB_ENV
+        echo "PUB_PATH=$PWD/ci_key.pub"          >> $GITHUB_ENV
+
+
     - name: Terraform apply
-      run: terraform -chdir=Terraform apply -auto-approve
+      run: terraform -chdir=Terraform apply -auto-approve \
+            -var="ssh_pub_key_path=${{ env.PUB_PATH }}"
+
 
     # - name: Check instance status
     #   run: |
@@ -123,18 +133,10 @@ jobs:
     - name: Setup SSH access
       run: |
         mkdir -p ~/.ssh && chmod 700 ~/.ssh
-        echo "${{ secrets.EC2_SSH_PRIVATE_KEY }}" > ~/.ssh/ec2_key
+        echo "${{ env.SSH_PRIV }}" | base64 -d > ~/.ssh/ec2_key
         chmod 600 ~/.ssh/ec2_key
-
         IP=${{ steps.tf_out.outputs.ip }}
-        echo "Target EC2 IP: $IP"
-
         ssh-keyscan -H "$IP" >> ~/.ssh/known_hosts 2>/dev/null
-
-        ssh -o StrictHostKeyChecking=no \
-            -i ~/.ssh/ec2_key \
-            -o ConnectTimeout=15 \
-            ubuntu@"$IP" 'echo "SSH test successful"'
 
 
     - name: Verify SSH setup
