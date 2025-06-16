@@ -93,20 +93,19 @@ jobs:
 
     - name: Fetch outputs
       id: tf_out
+      working-directory: Terraform
       run: |
-        cd Terraform
-        IP=$(terraform -chdir=Terraform output -raw ec2_public_ip 2>&1 | grep -Eo '([0-9]{1,3}\.){3}[0-9]{1,3}' | head -1)
-        ID=$(terraform -chdir=Terraform output -raw ec2_instance_id 2>&1 | grep -Eo 'i-[a-z0-9]{17}' | head -1)
+        IP=$(terraform -chdir=Terraform output -raw ec2_public_ip)
+        ID=$(terraform -chdir=Terraform output -raw ec2_instance_id)
 
         if [[ -z "$IP" || -z "$ID" ]]; then
-          echo "::error::Failed to get valid outputs"
-          echo "IP: '$IP'"
-          echo "ID: '$ID'"
+          echo "::error::terraform outputs are empty"
           exit 1
         fi
         
-        echo "ip=$IP" >> $GITHUB_OUTPUT
-        echo "instance_id=$ID" >> $GITHUB_OUTPUT
+        echo "ip=$IP"         >> "$GITHUB_OUTPUT"
+        echo "instance_id=$ID" >> "$GITHUB_OUTPUT"
+
 
     - name: Debug outputs
       run: |
