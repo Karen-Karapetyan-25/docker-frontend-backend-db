@@ -118,6 +118,7 @@ jobs:
       shell: bash
 
 
+
     - name: Debug outputs
       run: |
         echo "IP: ${{ steps.tf_out.outputs.ip }}"
