@@ -111,7 +111,7 @@ jobs:
         chmod 600 ~/.ssh/ec2_key
         
         # Use the IP from tf_out outputs
-        IP=${{ steps.tf_out.outputs.ip }}
+        IP=$(terraform -chdir=Terraform output -raw ec2_public_ip)
         echo "Using EC2 IP: $IP"
         
         # Verify IP format
