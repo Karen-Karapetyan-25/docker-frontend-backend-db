@@ -121,11 +121,9 @@ jobs:
         echo "${{ env.SSH_PRIV }}" | base64 -d > ~/.ssh/ec2_key
         chmod 600 ~/.ssh/ec2_key
         
-        # Use the IP from Terraform outputs
-        IP=$(terraform -chdir=Terraform output -raw ec2_public_ip)
+        IP=${{ steps.tf_out.outputs.ip }}
         echo "Using EC2 IP: $IP"
         
-        # Verify IP format
         if [[ ! "$IP" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
           echo "::error::Invalid IP address format: $IP"
           exit 1
