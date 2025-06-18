@@ -106,17 +106,9 @@ jobs:
       id: tf_out
       run: |
         TF_OUT=$(terraform -chdir=Terraform output -json)
-
-        IP=$(echo "$TF_OUT" | jq -r '.ec2_public_ip.value')
-        ID=$(echo "$TF_OUT" | jq -r '.ec2_instance_id.value')
-
-        if [ -z "$IP" ] || [ -z "$ID" ]; then
-          echo "::error::Failed to get Terraform outputs"
-          exit 1
-        fi
-
-        echo "ip=$IP"             >> "$GITHUB_OUTPUT"
-        echo "instance_id=$ID"    >> "$GITHUB_OUTPUT"
+        echo "$TF_OUT" | jq -r '.ec2_public_ip.value   as $ip
+                                | .ec2_instance_id.value as $id
+                                | "ip=\($ip)\ninstance_id=\($id)"' >> "$GITHUB_OUTPUT"
       shell: bash
 
 
