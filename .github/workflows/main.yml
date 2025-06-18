@@ -32,11 +32,8 @@ jobs:
       id: vars
       run: |
         SHA="${GITHUB_SHA::7}"
-        echo "front=${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/frontend:${SHA}" >> "$GITHUB_OUTPUT"
-        echo "back=${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/backend:${SHA}" >> "$GITHUB_OUTPUT"
-      env:
-        AWS_REGION: eu-west-1
-
+        echo "front=383313560305.dkr.ecr.${AWS_REGION}.amazonaws.com/frontend:${SHA}" >> "$GITHUB_OUTPUT"
+        echo "back=383313560305.dkr.ecr.${AWS_REGION}.amazonaws.com/backend:${SHA}"  >> "$GITHUB_OUTPUT"
 
     - name: Build frontend
       run: docker build -t ${{ steps.vars.outputs.front }} ./frontend
