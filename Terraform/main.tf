@@ -153,7 +153,7 @@ resource "aws_instance" "app_host" {
   vpc_security_group_ids      = [aws_security_group.app_sg.id]
   iam_instance_profile        = aws_iam_instance_profile.ec2_profile.name
   associate_public_ip_address = true
-  key_name                    = aws_key_pair.ci.key_name  # ← one line added
+  key_name                    = aws_key_pair.ci.key_name # ← one line added
 
   root_block_device {
     volume_type = "gp3"

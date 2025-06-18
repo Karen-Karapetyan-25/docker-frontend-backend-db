@@ -1,13 +1,16 @@
 name: build-scan-push-provision
 
+
 on:
   push:
     branches: [master]
   workflow_dispatch:
 
+
 env:
   AWS_REGION: ${{ secrets.AWS_REGION }}
   TF_AWS_REGION: ${{ secrets.AWS_REGION }}
+
 
 jobs:
   build_and_provision:
@@ -16,8 +19,10 @@ jobs:
       contents: read
       id-token: write
 
+
     steps:
     - uses: actions/checkout@v4
+
 
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v4
@@ -26,7 +31,9 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region:            ${{ env.AWS_REGION }}
 
+
     - uses: aws-actions/amazon-ecr-login@v2
+
 
     - name: Compute image tags
       id: vars
@@ -35,11 +42,14 @@ jobs:
         echo "front=383313560305.dkr.ecr.${AWS_REGION}.amazonaws.com/frontend:${SHA}" >> "$GITHUB_OUTPUT"
         echo "back=383313560305.dkr.ecr.${AWS_REGION}.amazonaws.com/backend:${SHA}"  >> "$GITHUB_OUTPUT"
 
+
     - name: Build frontend
       run: docker build -t ${{ steps.vars.outputs.front }} ./frontend
 
+
     - name: Build backend
       run: docker build -t ${{ steps.vars.outputs.back }} ./backend
+
 
     - name: Trivy scan (frontend)
       uses: aquasecurity/trivy-action@0.19.0
@@ -48,6 +58,7 @@ jobs:
         exit-code: 0
         ignore-unfixed: true
 
+
     - name: Trivy scan (backend)
       uses: aquasecurity/trivy-action@0.19.0
       with:
@@ -55,16 +66,20 @@ jobs:
         exit-code: 0
         ignore-unfixed: true
 
+
     - name: Push images
       run: |
         docker push ${{ steps.vars.outputs.front }}
         docker push ${{ steps.vars.outputs.back }}
 
+
     - uses: hashicorp/setup-terraform@v2
       with: { terraform_version: 1.8.5 }
 
+
     - name: Terraform init
       run: terraform -chdir=Terraform init
+
 
     - name: Import pre-existing IAM artefacts (idempotent)
       run: |
@@ -74,29 +89,35 @@ jobs:
         terraform state list | grep -q aws_iam_instance_profile.ec2_profile \
           || terraform import aws_iam_instance_profile.ec2_profile ec2-ecr-readonly-profile
 
+
     - name: Generate one-time SSH key
       run: |
         ssh-keygen -t ed25519 -f ci_key -N ""   # priv: ci_key, pub: ci_key.pub
         echo "SSH_PRIV=$(cat ci_key | base64 -w0)" >> $GITHUB_ENV
         echo "PUB_PATH=$PWD/ci_key.pub"          >> $GITHUB_ENV
 
+
     - name: Terraform apply
       run: |
         terraform -chdir=Terraform apply -auto-approve -var="ssh_pub_key_path=${{ env.PUB_PATH }}"
 
-    - name: Fetch outputs
+
+    - name: Fetch outputs (robust)
       id: tf_out
       run: |
-        IP=$(terraform -chdir=Terraform output -raw ec2_public_ip | head -n1)
-        ID=$(terraform -chdir=Terraform output -raw ec2_instance_id | head -n1)
+        TF_OUT=$(terraform -chdir=Terraform output -json)
+
+        IP=$(echo "$TF_OUT" | jq -r '.ec2_public_ip.value')
+        ID=$(echo "$TF_OUT" | jq -r '.ec2_instance_id.value')
 
         if [ -z "$IP" ] || [ -z "$ID" ]; then
           echo "::error::Failed to get Terraform outputs"
           exit 1
         fi
 
-        echo "ip=$IP"         >> "$GITHUB_OUTPUT"
-        echo "instance_id=$ID" >> "$GITHUB_OUTPUT"
+        echo "ip=$IP"             >> "$GITHUB_OUTPUT"
+        echo "instance_id=$ID"    >> "$GITHUB_OUTPUT"
+      shell: bash
 
 
     - name: Debug outputs
@@ -135,6 +156,7 @@ jobs:
         AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
+
     - name: Write inventory
       run: |
         mkdir -p ansible
@@ -142,6 +164,7 @@ jobs:
         [app_host]
         ${{ steps.tf_out.outputs.ip }} ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/ec2_key
         EOF
+
 
     - name: Wait for SSH
       run: |
@@ -157,8 +180,10 @@ jobs:
         echo "::error::SSH connection failed after 15 attempts"
         exit 1
 
+
     - name: Install Ansible
       run: sudo apt-get update && sudo apt-get install -y ansible
+
 
     - name: Render docker-compose.yml
       run: |
@@ -176,6 +201,7 @@ jobs:
             restart: always
         EOF
 
+
     - name: Deploy with Ansible
       run: |
         ANSIBLE_HOST_KEY_CHECKING=False \
@@ -183,6 +209,7 @@ jobs:
           -e "frontend_image=${{ steps.vars.outputs.front }}" \
           -e "backend_image=${{ steps.vars.outputs.back }}"
 
+          
     - name: Verify deployment
       run: |
         IP=${{ steps.tf_out.outputs.ip }}
