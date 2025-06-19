@@ -103,81 +103,19 @@ jobs:
 
 
     - name: Fetch outputs
-      id: tf_out
+      working-directory: ./terraform
+      id: get_ip
       run: |
-        IP=$(terraform -chdir=Terraform output -raw ec2_public_ip   | tail -n1 | tr -d '\r')
-        ID=$(terraform -chdir=Terraform output -raw ec2_instance_id | tail -n1 | tr -d '\r')
+        EC2_IP=$(terraform output -raw ec2_public_ip)
+        echo "EC2_IP=$EC2_IP" >> $GITHUB_ENV
+        echo "Public IP: $EC2_IP"
 
-        if [ -z "$IP" ] || [ -z "$ID" ]; then
-          echo "::error::Failed to get Terraform outputs"
-          exit 1
-        fi
-
-        echo "ip=$IP"          >> "$GITHUB_OUTPUT"
-        echo "instance_id=$ID" >> "$GITHUB_OUTPUT"
-      shell: bash
-
-
-
-    - name: Debug outputs
-      run: |
-        echo "IP: ${{ steps.tf_out.outputs.ip }}"
-        echo "Instance ID: ${{ steps.tf_out.outputs.instance_id }}"
-
-
-    - name: Debug Terraform Output
-      run: |
-        terraform -chdir=Terraform version
-        terraform -chdir=Terraform output -raw ec2_public_ip || echo "No IP output found"
-      env:
-        AWS_REGION: ${{ secrets.AWS_REGION }}
-        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-
-
-    - name: Setup SSH access
-      run: |
-        mkdir -p ~/.ssh && chmod 700 ~/.ssh
-        echo "${{ env.SSH_PRIV }}" | base64 -d > ~/.ssh/ec2_key
-        chmod 600 ~/.ssh/ec2_key
-        
-        IP=${{ steps.tf_out.outputs.ip }}
-        echo "Using EC2 IP: $IP"
-        
-        if [[ ! "$IP" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-          echo "::error::Invalid IP address format: $IP"
-          exit 1
-        fi
-        
-        ssh-keyscan -H "$IP" >> ~/.ssh/known_hosts
-      env:
-        AWS_REGION: ${{ secrets.AWS_REGION }}
-        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
 
     - name: Write inventory
       run: |
-        mkdir -p ansible
-        cat > ansible/inventory.ini <<EOF
-        [app_host]
-        ${{ steps.tf_out.outputs.ip }} ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/ec2_key
-        EOF
-
-
-    - name: Wait for SSH
-      run: |
-        IP=${{ steps.tf_out.outputs.ip }}
-        for i in {1..15}; do
-          echo "Attempt $i/15 to connect to $IP…"
-          ssh -o StrictHostKeyChecking=no \
-              -i ~/.ssh/ec2_key \
-              -o ConnectTimeout=15 \
-              ubuntu@"$IP" 'echo "ready"' && exit 0
-          sleep 10
-        done
-        echo "::error::SSH connection failed after 15 attempts"
-        exit 1
+        echo "[ec2]" > ansible/inventory.ini
+        echo "$EC2_IP ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/id_rsa" >> ansible/inventory.ini
 
 
     - name: Install Ansible
