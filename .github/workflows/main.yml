@@ -1,6 +1,5 @@
 name: build-scan-push-provision
 
-
 on:
   push:
     branches: [master]
@@ -95,7 +94,7 @@ jobs:
     - name: Terraform apply
       run: |
         terraform -chdir=Terraform apply -auto-approve -var="ssh_pub_key_path=${{ env.PUB_PATH }}"
-        
+
     - name: Fetch outputs
       working-directory: ./Terraform
       id: get_ip
