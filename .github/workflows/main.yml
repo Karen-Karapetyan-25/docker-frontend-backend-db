@@ -108,6 +108,10 @@ jobs:
       run: |
         echo "[ec2]" > ansible/inventory.ini
         echo "$EC2_IP ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/id_rsa" >> ansible/inventory.ini
+
+
+        echo "[ec2]" > ansible/inventory.ini
+        echo "$EC2_IP ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/id_rsa" >> ansible/inventory.ini
     - name: Install Ansible
       run: sudo apt-get update && sudo apt-get install -y ansible
 
