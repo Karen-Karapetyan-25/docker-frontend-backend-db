@@ -95,16 +95,6 @@ jobs:
       run: |
         terraform -chdir=Terraform apply -auto-approve -var="ssh_pub_key_path=${{ env.PUB_PATH }}"
 
-    # - name: Fetch outputs
-    #   working-directory: ./Terraform
-    #   id: get_ip
-    #   env:
-    #     TF_LOG: ""
-    #   run: |
-    #     EC2_IP=$( terraform output -raw ec2_public_ip )
-    #     echo "EC2_IP=$EC2_IP" >> $GITHUB_ENV
-    #     echo "Public IP: $EC2_IP"
-
 
     - name: Write inventory
       run: |
@@ -142,7 +132,6 @@ jobs:
           
     - name: Verify deployment
       run: |
-        IP=${{ steps.tf_out.outputs.ip }}
         curl -fsS --retry 5 --retry-delay 5 http://$IP:8080
         curl -fsS --retry 5 --retry-delay 5 http://$IP
         curl -fsS --retry 5 --retry-delay 5 http://$IP:3000/api/health
