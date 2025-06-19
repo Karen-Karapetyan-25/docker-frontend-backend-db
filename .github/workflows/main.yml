@@ -84,7 +84,7 @@ jobs:
         terraform -chdir=Terraform apply -auto-approve -var="ssh_pub_key_path=${{ env.PUB_PATH }}"
 
     - name: Capture EC2 IP from Terraform Output
-      working-directory: ./terraform
+      working-directory: ./Terraform
       id: get_ip
       run: |
         EC2_IP=$(terraform output -raw ec2_public_ip)
