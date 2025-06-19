@@ -1,5 +1,5 @@
 ---
-- hosts: app_host
+- hosts: all
   become: yes
   tasks:
     - name: Update APT cache & install base packages

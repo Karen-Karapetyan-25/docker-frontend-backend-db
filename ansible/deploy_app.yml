@@ -1,5 +1,5 @@
 - name: Deploy Dockerized Webapp
-  hosts: app_host
+  hosts: all
   become: yes
   tasks:
     - name: Install Docker and dependencies
