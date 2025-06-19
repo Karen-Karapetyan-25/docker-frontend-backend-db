@@ -41,8 +41,6 @@ jobs:
         SHA="${GITHUB_SHA::7}"
         echo "front=383313560305.dkr.ecr.${AWS_REGION}.amazonaws.com/frontend:${SHA}" >> "$GITHUB_OUTPUT"
         echo "back=383313560305.dkr.ecr.${AWS_REGION}.amazonaws.com/backend:${SHA}"  >> "$GITHUB_OUTPUT"
-
-
     - name: Build frontend
       run: docker build -t ${{ steps.vars.outputs.front }} ./frontend
 
@@ -71,8 +69,6 @@ jobs:
       run: |
         docker push ${{ steps.vars.outputs.front }}
         docker push ${{ steps.vars.outputs.back }}
-
-
     - uses: hashicorp/setup-terraform@v2
       with: { terraform_version: 1.8.5 }
 
@@ -89,7 +85,6 @@ jobs:
         terraform state list | grep -q aws_iam_instance_profile.ec2_profile \
           || terraform import aws_iam_instance_profile.ec2_profile ec2-ecr-readonly-profile
 
-
     - name: Generate one-time SSH key
       run: |
         ssh-keygen -t ed25519 -f ci_key -N ""   # priv: ci_key, pub: ci_key.pub
@@ -100,86 +95,19 @@ jobs:
     - name: Terraform apply
       run: |
         terraform -chdir=Terraform apply -auto-approve -var="ssh_pub_key_path=${{ env.PUB_PATH }}"
-
-
+        
     - name: Fetch outputs
-      id: tf_out
+      working-directory: ./Terraform
+      id: get_ip
       run: |
-        IP=$(terraform -chdir=Terraform output -raw ec2_public_ip   | tail -n1 | tr -d '\r')
-        ID=$(terraform -chdir=Terraform output -raw ec2_instance_id | tail -n1 | tr -d '\r')
-
-        if [ -z "$IP" ] || [ -z "$ID" ]; then
-          echo "::error::Failed to get Terraform outputs"
-          exit 1
-        fi
-
-        echo "ip=$IP"          >> "$GITHUB_OUTPUT"
-        echo "instance_id=$ID" >> "$GITHUB_OUTPUT"
-      shell: bash
-
-
-
-    - name: Debug outputs
-      run: |
-        echo "IP: ${{ steps.tf_out.outputs.ip }}"
-        echo "Instance ID: ${{ steps.tf_out.outputs.instance_id }}"
-
-
-    - name: Debug Terraform Output
-      run: |
-        terraform -chdir=Terraform version
-        terraform -chdir=Terraform output -raw ec2_public_ip || echo "No IP output found"
-      env:
-        AWS_REGION: ${{ secrets.AWS_REGION }}
-        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-
-
-    - name: Setup SSH access
-      run: |
-        mkdir -p ~/.ssh && chmod 700 ~/.ssh
-        echo "${{ env.SSH_PRIV }}" | base64 -d > ~/.ssh/ec2_key
-        chmod 600 ~/.ssh/ec2_key
-        
-        IP=${{ steps.tf_out.outputs.ip }}
-        echo "Using EC2 IP: $IP"
-        
-        if [[ ! "$IP" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-          echo "::error::Invalid IP address format: $IP"
-          exit 1
-        fi
-        
-        ssh-keyscan -H "$IP" >> ~/.ssh/known_hosts
-      env:
-        AWS_REGION: ${{ secrets.AWS_REGION }}
-        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-
+        EC2_IP=$(terraform output -raw ec2_public_ip)
+        echo "EC2_IP=$EC2_IP" >> $GITHUB_ENV
+        echo "Public IP: $EC2_IP"
 
     - name: Write inventory
       run: |
-        mkdir -p ansible
-        cat > ansible/inventory.ini <<EOF
-        [app_host]
-        ${{ steps.tf_out.outputs.ip }} ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/ec2_key
-        EOF
-
-
-    - name: Wait for SSH
-      run: |
-        IP=${{ steps.tf_out.outputs.ip }}
-        for i in {1..15}; do
-          echo "Attempt $i/15 to connect to $IP…"
-          ssh -o StrictHostKeyChecking=no \
-              -i ~/.ssh/ec2_key \
-              -o ConnectTimeout=15 \
-              ubuntu@"$IP" 'echo "ready"' && exit 0
-          sleep 10
-        done
-        echo "::error::SSH connection failed after 15 attempts"
-        exit 1
-
-
+        echo "[ec2]" > ansible/inventory.ini
+        echo "$EC2_IP ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/id_rsa" >> ansible/inventory.ini
     - name: Install Ansible
       run: sudo apt-get update && sudo apt-get install -y ansible
 
@@ -199,15 +127,12 @@ jobs:
             ports: ["3000:3000"]
             restart: always
         EOF
-
-
     - name: Deploy with Ansible
       run: |
         ANSIBLE_HOST_KEY_CHECKING=False \
         ansible-playbook -i ansible/inventory.ini ansible/deploy_app.yml \
           -e "frontend_image=${{ steps.vars.outputs.front }}" \
           -e "backend_image=${{ steps.vars.outputs.back }}"
-
           
     - name: Verify deployment
       run: |
