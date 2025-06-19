@@ -60,7 +60,7 @@ jobs:
         docker push ${{ steps.vars.outputs.front }}
         docker push ${{ steps.vars.outputs.back }}
     - uses: hashicorp/setup-terraform@v2
-      with: { terraform_version: 1.8.5 }
+      with: { terraform_version: 1.8.5, terraform_wrapper: false }
 
     - name: Terraform init
       run: terraform -chdir=Terraform init
@@ -75,7 +75,7 @@ jobs:
 
     - name: Generate one-time SSH key
       run: |
-        ssh-keygen -t ed25519 -f ci_key -N ""   # priv: ci_key, pub: ci_key.pub
+        ssh-keygen -t ed25519 -f ci_key -N ""
         echo "SSH_PRIV=$(cat ci_key | base64 -w0)" >> $GITHUB_ENV
         echo "PUB_PATH=$PWD/ci_key.pub"          >> $GITHUB_ENV
 
