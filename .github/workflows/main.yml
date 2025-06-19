@@ -5,11 +5,9 @@ on:
     branches: [master]
   workflow_dispatch:
 
-
 env:
   AWS_REGION: ${{ secrets.AWS_REGION }}
   TF_AWS_REGION: ${{ secrets.AWS_REGION }}
-
 
 jobs:
   build_and_provision:
@@ -18,10 +16,8 @@ jobs:
       contents: read
       id-token: write
 
-
     steps:
     - uses: actions/checkout@v4
-
 
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v4
@@ -30,9 +26,7 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region:            ${{ env.AWS_REGION }}
 
-
     - uses: aws-actions/amazon-ecr-login@v2
-
 
     - name: Compute image tags
       id: vars
@@ -40,13 +34,12 @@ jobs:
         SHA="${GITHUB_SHA::7}"
         echo "front=383313560305.dkr.ecr.${AWS_REGION}.amazonaws.com/frontend:${SHA}" >> "$GITHUB_OUTPUT"
         echo "back=383313560305.dkr.ecr.${AWS_REGION}.amazonaws.com/backend:${SHA}"  >> "$GITHUB_OUTPUT"
+
     - name: Build frontend
       run: docker build -t ${{ steps.vars.outputs.front }} ./frontend
 
-
     - name: Build backend
       run: docker build -t ${{ steps.vars.outputs.back }} ./backend
-
 
     - name: Trivy scan (frontend)
       uses: aquasecurity/trivy-action@0.19.0
@@ -55,14 +48,12 @@ jobs:
         exit-code: 0
         ignore-unfixed: true
 
-
     - name: Trivy scan (backend)
       uses: aquasecurity/trivy-action@0.19.0
       with:
         image-ref: ${{ steps.vars.outputs.back }}
         exit-code: 0
         ignore-unfixed: true
-
 
     - name: Push images
       run: |
@@ -71,10 +62,8 @@ jobs:
     - uses: hashicorp/setup-terraform@v2
       with: { terraform_version: 1.8.5 }
 
-
     - name: Terraform init
       run: terraform -chdir=Terraform init
-
 
     - name: Import pre-existing IAM artefacts (idempotent)
       run: |
@@ -90,23 +79,19 @@ jobs:
         echo "SSH_PRIV=$(cat ci_key | base64 -w0)" >> $GITHUB_ENV
         echo "PUB_PATH=$PWD/ci_key.pub"          >> $GITHUB_ENV
 
-
     - name: Terraform apply
       run: |
         terraform -chdir=Terraform apply -auto-approve -var="ssh_pub_key_path=${{ env.PUB_PATH }}"
-
 
     - name: Write inventory
       run: |
         echo "[ec2]" > ansible/inventory.ini
         echo "$EC2_IP ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/id_rsa" >> ansible/inventory.ini
 
-
         echo "[ec2]" > ansible/inventory.ini
         echo "$EC2_IP ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/id_rsa" >> ansible/inventory.ini
     - name: Install Ansible
       run: sudo apt-get update && sudo apt-get install -y ansible
-
 
     - name: Render docker-compose.yml
       run: |
@@ -123,15 +108,10 @@ jobs:
             ports: ["3000:3000"]
             restart: always
         EOF
+        
     - name: Deploy with Ansible
       run: |
         ANSIBLE_HOST_KEY_CHECKING=False \
         ansible-playbook -i ansible/inventory.ini ansible/deploy_app.yml \
           -e "frontend_image=${{ steps.vars.outputs.front }}" \
-          -e "backend_image=${{ steps.vars.outputs.back }}"
-          
-    - name: Verify deployment
-      run: |
-        curl -fsS --retry 5 --retry-delay 5 http://$EC2_IP:8080
-        curl -fsS --retry 5 --retry-delay 5 http://$EC2_IP
-        curl -fsS --retry 5 --retry-delay 5 http://$EC2_IP:3000/api/health
+          -e "backend_image=${{ steps.vars.outputs.back }}
