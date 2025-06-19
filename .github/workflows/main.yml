@@ -108,10 +108,10 @@ jobs:
             ports: ["3000:3000"]
             restart: always
         EOF
-        
+
     - name: Deploy with Ansible
       run: |
         ANSIBLE_HOST_KEY_CHECKING=False \
         ansible-playbook -i ansible/inventory.ini ansible/deploy_app.yml \
           -e "frontend_image=${{ steps.vars.outputs.front }}" \
-          -e "backend_image=${{ steps.vars.outputs.back }}
+          -e "backend_image=${{ steps.vars.outputs.back }}"

@@ -2,7 +2,6 @@
 - hosts: app_host
   become: yes
   tasks:
-    # ─── Install prerequisites ───────────────────────────
     - name: Update APT cache & install base packages
       apt:
         update_cache: yes
@@ -12,7 +11,6 @@
           - gnupg
           - lsb-release
 
-    # ─── Docker repository & key ─────────────────────────
     - name: Add Docker GPG key
       apt_key:
         url: https://download.docker.com/linux/ubuntu/gpg
@@ -24,7 +22,6 @@
         state: present
         filename: docker
 
-    # ─── Install Docker CE and the Compose plugin ────────
     - name: Install Docker + Compose plugin
       apt:
         update_cache: yes
@@ -34,7 +31,6 @@
           - containerd.io
           - docker-compose-plugin
 
-    # ─── Post-install tweaks ─────────────────────────────
     - name: Add ubuntu user to docker group
       user:
         name: ubuntu
