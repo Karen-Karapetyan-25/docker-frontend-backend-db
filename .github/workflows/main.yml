@@ -73,11 +73,13 @@ jobs:
         terraform state list | grep -q aws_iam_instance_profile.ec2_profile \
           || terraform import aws_iam_instance_profile.ec2_profile ec2-ecr-readonly-profile
 
-    - name: Generate one-time SSH key
+
+    - name: Install SSH private key
       run: |
-        ssh-keygen -t ed25519 -f ci_key -N ""
-        echo "SSH_PRIV=$(cat ci_key | base64 -w0)" >> $GITHUB_ENV
-        echo "PUB_PATH=$PWD/ci_key.pub"          >> $GITHUB_ENV
+        mkdir -p ~/.ssh
+        echo "$SSH_PRIV" | base64 --decode > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+
 
     - name: Terraform apply
       run: |
@@ -93,11 +95,16 @@ jobs:
 
     - name: Write inventory
       run: |
-        echo "[ec2]" > ansible/inventory.ini
-        echo "$EC2_IP ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/id_rsa" >> ansible/inventory.ini
+        # echo "[ec2]" > ansible/inventory.ini
+        # echo "$EC2_IP ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/id_rsa" >> ansible/inventory.ini
 
-        echo "[ec2]" > ansible/inventory.ini
-        echo "$EC2_IP ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/id_rsa" >> ansible/inventory.ini
+        # echo "[ec2]" > ansible/inventory.ini
+        # echo "$EC2_IP ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/id_rsa" >> ansible/inventory.ini
+        cat > ansible/inventory.ini <<EOF
+        [ec2]
+        $EC2_IP ansible_user=ubuntu ansible_ssh_private_key_file=/home/runner/.ssh/id_rsa
+        EOF
+
     - name: Install Ansible
       run: sudo apt-get update && sudo apt-get install -y ansible
 
