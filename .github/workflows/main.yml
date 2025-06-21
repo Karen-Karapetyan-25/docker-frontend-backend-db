@@ -61,18 +61,18 @@ jobs:
         docker push ${{ steps.vars.outputs.back }}
 
     - uses: hashicorp/setup-terraform@v2
-      with: { terraform_version: 1.8.5, terraform_wrapper: false }
+      with:
+        terraform_version: 1.8.5
+        terraform_wrapper: false
 
     - name: Terraform init
       run: terraform -chdir=Terraform init
 
-    - name: Import pre-existing IAM artefacts (idempotent)
+    - name: Import IAM roles (idempotent)
       run: |
         cd Terraform
-        terraform state list | grep -q aws_iam_role.ec2_ecr_readonly \
-          || terraform import aws_iam_role.ec2_ecr_readonly ec2-ecr-readonly-role
-        terraform state list | grep -q aws_iam_instance_profile.ec2_profile \
-          || terraform import aws_iam_instance_profile.ec2_profile ec2-ecr-readonly-profile
+        terraform state list | grep -q aws_iam_role.ec2_ecr_readonly || terraform import aws_iam_role.ec2_ecr_readonly ec2-ecr-readonly-role
+        terraform state list | grep -q aws_iam_instance_profile.ec2_profile || terraform import aws_iam_instance_profile.ec2_profile ec2-ecr-readonly-profile
 
     - name: Install SSH private key
       run: |
@@ -80,26 +80,32 @@ jobs:
         echo "$SSH_PRIV" | base64 --decode > ~/.ssh/id_rsa
         chmod 600 ~/.ssh/id_rsa
 
-    - name: Set pub key path
+    - name: Set pub key path for Terraform
       run: |
-        echo "$SSH_PUB" > id_rsa.pub
-        echo "PUB_PATH=$PWD/id_rsa.pub" >> $GITHUB_ENV
+        echo "$SSH_PUB" > /tmp/id_rsa.pub
+        echo "PUB_PATH=/tmp/id_rsa.pub" >> $GITHUB_ENV
 
     - name: Terraform apply
-      run: |
-        terraform -chdir=Terraform apply \
-          -auto-approve \
-          -var="ssh_pub_key_path=$PUB_PATH"
+      run: terraform -chdir=Terraform apply -auto-approve -var="ssh_pub_key_path=$PUB_PATH"
 
-    - name: Capture EC2 IP from Terraform Output
+    - name: Capture EC2 IP from Terraform output
       working-directory: ./Terraform
       id: get_ip
       run: |
         EC2_IP=$(terraform output -raw ec2_public_ip)
         echo "EC2_IP=$EC2_IP" >> $GITHUB_ENV
-        echo "Public IP: $EC2_IP"
+        echo "$EC2_IP" > ../ec2_ip.txt
 
-    - name: Write inventory
+    - name: Wait for SSH to become available
+      run: |
+        EC2_IP=$(cat ec2_ip.txt)
+        echo "Waiting for EC2 ($EC2_IP) SSH..."
+        for i in {1..10}; do
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ubuntu@$EC2_IP 'echo ready' && break
+          sleep 10
+        done
+
+    - name: Write Ansible inventory
       run: |
         echo "[ec2]" > ansible/inventory.ini
         echo "$EC2_IP ansible_user=ubuntu ansible_ssh_private_key_file=/home/runner/.ssh/id_rsa" >> ansible/inventory.ini
@@ -123,7 +129,6 @@ jobs:
             restart: always
         EOF
 
-        
     - name: Deploy with Ansible
       run: |
         ANSIBLE_HOST_KEY_CHECKING=False \
