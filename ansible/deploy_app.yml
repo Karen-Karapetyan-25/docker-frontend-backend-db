@@ -1,5 +1,6 @@
+---
 - name: Deploy Dockerized Webapp
-  hosts: all
+  hosts: ec2
   become: yes
   tasks:
     - name: Install Docker and dependencies

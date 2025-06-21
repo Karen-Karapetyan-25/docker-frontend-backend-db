@@ -1,5 +1,5 @@
 ---
-- hosts: all
+- hosts: ec2
   become: yes
   tasks:
     - name: Update APT cache & install base packages

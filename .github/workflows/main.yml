@@ -59,6 +59,7 @@ jobs:
       run: |
         docker push ${{ steps.vars.outputs.front }}
         docker push ${{ steps.vars.outputs.back }}
+
     - uses: hashicorp/setup-terraform@v2
       with: { terraform_version: 1.8.5, terraform_wrapper: false }
 
@@ -73,20 +74,22 @@ jobs:
         terraform state list | grep -q aws_iam_instance_profile.ec2_profile \
           || terraform import aws_iam_instance_profile.ec2_profile ec2-ecr-readonly-profile
 
-
     - name: Install SSH private key
       run: |
         mkdir -p ~/.ssh
         echo "$SSH_PRIV" | base64 --decode > ~/.ssh/id_rsa
         chmod 600 ~/.ssh/id_rsa
 
+    - name: Set pub key path
+      run: |
+        echo "$SSH_PUB" > id_rsa.pub
+        echo "PUB_PATH=$PWD/id_rsa.pub" >> $GITHUB_ENV
 
     - name: Terraform apply
       run: |
         terraform -chdir=Terraform apply \
           -auto-approve \
           -var="ssh_pub_key_path=$PUB_PATH"
-
 
     - name: Capture EC2 IP from Terraform Output
       working-directory: ./Terraform
@@ -96,18 +99,10 @@ jobs:
         echo "EC2_IP=$EC2_IP" >> $GITHUB_ENV
         echo "Public IP: $EC2_IP"
 
-
     - name: Write inventory
       run: |
-        # echo "[ec2]" > ansible/inventory.ini
-        # echo "$EC2_IP ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/id_rsa" >> ansible/inventory.ini
-
-        # echo "[ec2]" > ansible/inventory.ini
-        # echo "$EC2_IP ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/id_rsa" >> ansible/inventory.ini
-        cat > ansible/inventory.ini <<EOF
-        [ec2]
-        $EC2_IP ansible_user=ubuntu ansible_ssh_private_key_file=/home/runner/.ssh/id_rsa
-        EOF
+        echo "[ec2]" > ansible/inventory.ini
+        echo "$EC2_IP ansible_user=ubuntu ansible_ssh_private_key_file=/home/runner/.ssh/id_rsa" >> ansible/inventory.ini
 
     - name: Install Ansible
       run: sudo apt-get update && sudo apt-get install -y ansible
