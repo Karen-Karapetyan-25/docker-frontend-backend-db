@@ -74,17 +74,17 @@ jobs:
         terraform state list | grep -q aws_iam_role.ec2_ecr_readonly || terraform import aws_iam_role.ec2_ecr_readonly ec2-ecr-readonly-role
         terraform state list | grep -q aws_iam_instance_profile.ec2_profile || terraform import aws_iam_instance_profile.ec2_profile ec2-ecr-readonly-profile
 
-    - name: Install SSH private key
-      run: |
-        mkdir -p ~/.ssh
-        echo "$SSH_PRIV" | base64 --decode > ~/.ssh/id_rsa
-        chmod 600 ~/.ssh/id_rsa
+    # - name: Install SSH private key
+    #   run: |
+    #     mkdir -p ~/.ssh
+    #     echo "$SSH_PRIV" | base64 --decode > ~/.ssh/id_rsa
+    #     chmod 600 ~/.ssh/id_rsa
 
-    - name: Set pub key path for Terraform
-      run: |
-        echo "$SSH_PUB" > /tmp/id_rsa.pub
-        chmod 644 /tmp/id_rsa.pub
-        echo "PUB_PATH=/tmp/id_rsa.pub" >> $GITHUB_ENV
+    # - name: Set pub key path for Terraform
+    #   run: |
+    #     echo "$SSH_PUB" > /tmp/id_rsa.pub
+    #     chmod 644 /tmp/id_rsa.pub
+    #     echo "PUB_PATH=/tmp/id_rsa.pub" >> $GITHUB_ENV
 
     - name: Terraform apply
       run: terraform -chdir=Terraform apply -auto-approve -var="ssh_pub_key_path=$PUB_PATH"
