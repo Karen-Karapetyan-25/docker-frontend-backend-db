@@ -83,6 +83,7 @@ jobs:
     - name: Set pub key path for Terraform
       run: |
         echo "$SSH_PUB" > /tmp/id_rsa.pub
+        chmod 644 /tmp/id_rsa.pub
         echo "PUB_PATH=/tmp/id_rsa.pub" >> $GITHUB_ENV
 
     - name: Terraform apply
