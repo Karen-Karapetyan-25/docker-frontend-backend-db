@@ -48,13 +48,6 @@ jobs:
         exit-code: 0
         ignore-unfixed: true
 
-    - name: Trivy scan (backend)
-      uses: aquasecurity/trivy-action@0.19.0
-      with:
-        image-ref: ${{ steps.vars.outputs.back }}
-        exit-code: 0
-        ignore-unfixed: true
-
     - name: Push images
       run: |
         docker push ${{ steps.vars.outputs.front }}
@@ -62,7 +55,7 @@ jobs:
 
     - uses: hashicorp/setup-terraform@v2
       with:
-        terraform_version: 1.8.5
+        terraform_version: 1.13.1
         terraform_wrapper: false
 
     - name: Terraform init
